@@ -3,7 +3,7 @@
 import React from 'react';
 
 type ZoneDef = {
-  id: string;
+  id: 'A' | 'B' | 'C' | 'D' | 'E';
   code: string;
   alliance: 'red' | 'blue';
   x: number;
@@ -13,18 +13,18 @@ type ZoneDef = {
 };
 
 const ALL_ZONES: ZoneDef[] = [
-  // Red Alliance Zones (Columns A-C)
-  { id: 'A6 · Esq. Sup.', code: 'A6', alliance: 'red', x: 35, y: 23, w: 51, h: 49 },
-  { id: 'C6 · Centro Sup.', code: 'C6', alliance: 'red', x: 147, y: 23, w: 50, h: 47 },
-  { id: 'A2 · Pared Lat.', code: 'A2', alliance: 'red', x: 35, y: 222, w: 49, h: 74 },
-  { id: 'A1 · Garden', code: 'A1', alliance: 'red', x: 35, y: 299, w: 53, h: 48 },
-  { id: 'C1 · Audience', code: 'C1', alliance: 'red', x: 120, y: 304, w: 77, h: 49 },
+  // Red Alliance Zones (Columns A-C, 180deg mirror of Blue)
+  { id: 'A', code: 'C1', alliance: 'red', x: 120, y: 304, w: 77, h: 49 },
+  { id: 'B', code: 'A1', alliance: 'red', x: 35, y: 299, w: 53, h: 48 },
+  { id: 'C', code: 'A2', alliance: 'red', x: 35, y: 222, w: 49, h: 74 },
+  { id: 'D', code: 'A6', alliance: 'red', x: 35, y: 23, w: 51, h: 49 },
+  { id: 'E', code: 'C6', alliance: 'red', x: 147, y: 23, w: 50, h: 47 },
   // Blue Alliance Zones (Columns D-F)
-  { id: 'D6 · Centro Sup.', code: 'D6', alliance: 'blue', x: 203, y: 23, w: 77, h: 47 },
-  { id: 'F6 · Garden', code: 'F6', alliance: 'blue', x: 312, y: 24, w: 53, h: 48 },
-  { id: 'F5 · Pared Lat.', code: 'F5', alliance: 'blue', x: 316, y: 78, w: 49, h: 74 },
-  { id: 'F1 · Esq. Inf.', code: 'F1', alliance: 'blue', x: 314, y: 304, w: 51, h: 49 },
-  { id: 'D1 · Audience', code: 'D1', alliance: 'blue', x: 203, y: 304, w: 50, h: 49 },
+  { id: 'A', code: 'D6', alliance: 'blue', x: 203, y: 23, w: 77, h: 47 },
+  { id: 'B', code: 'F6', alliance: 'blue', x: 312, y: 24, w: 53, h: 48 },
+  { id: 'C', code: 'F5', alliance: 'blue', x: 316, y: 78, w: 49, h: 74 },
+  { id: 'D', code: 'F1', alliance: 'blue', x: 314, y: 304, w: 51, h: 49 },
+  { id: 'E', code: 'D1', alliance: 'blue', x: 203, y: 304, w: 50, h: 49 },
 ];
 
 const COLS = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -39,28 +39,40 @@ export interface FieldMarker {
 
 export default function RagnarokFieldHeatmap({
   positions,
+  sidePositions,
   teamNumber,
   markers,
 }: {
   positions?: Record<string, { count: number; pct: number }>;
+  sidePositions?: Record<string, { count: number; pct: number }>;
   teamNumber?: number;
   markers?: FieldMarker[];
 }) {
-  // Match both exact new zone IDs (e.g. "D1 · Audience") and legacy strings
+  // Match alliance-scoped A-E zones first, with fallback for legacy coordinate strings
   const getZoneStats = (zone: ZoneDef) => {
+    const sideKey = `${zone.alliance}:${zone.id}`;
+    if (sidePositions && sidePositions[sideKey]) return sidePositions[sideKey];
     if (!positions) return null;
-    if (positions[zone.id]) return positions[zone.id];
-    const byCode = Object.entries(positions).find(([k]) => k.startsWith(zone.code));
-    return byCode ? byCode[1] : null;
+    const byCode = Object.entries(positions).find(([k]) => k.toUpperCase().startsWith(zone.code));
+    if (byCode) return byCode[1];
+    if (!sidePositions && positions[zone.id]) return positions[zone.id];
+    return null;
   };
 
   const getZoneMarkers = (zone: ZoneDef) => {
     if (!markers?.length) return [];
-    return markers.filter((m) => m.startPos === zone.id || m.startPos.startsWith(zone.code));
+    return markers.filter((m) => {
+      if (m.alliance !== zone.alliance) return false;
+      const upper = m.startPos.trim().toUpperCase();
+      return upper === zone.id || upper.startsWith(zone.code);
+    });
   };
 
   const unmappedEntries = positions
-    ? Object.entries(positions).filter(([k]) => !ALL_ZONES.some((z) => k === z.id || k.startsWith(z.code)))
+    ? Object.entries(positions).filter(([k]) => {
+        const upper = k.trim().toUpperCase();
+        return !/^[A-E]$/.test(upper) && !ALL_ZONES.some((z) => upper.startsWith(z.code));
+      })
     : [];
 
   return (
@@ -106,7 +118,7 @@ export default function RagnarokFieldHeatmap({
 
           {/* Column & Row Labels */}
           {COLS.map((col, idx) => (
-            <text key={col} x={32 + idx * 56 + 28} y="31" textAnchor="middle" dominantBaseline="central" fill="#71717A" fontSize="9" fontWeight="700">
+            <text key={col} x={32 + idx * 56 + 28} y="11" textAnchor="middle" dominantBaseline="central" fill="#71717A" fontSize="9" fontWeight="700">
               {col}
             </text>
           ))}
@@ -177,7 +189,7 @@ export default function RagnarokFieldHeatmap({
                   : 'rgba(255, 255, 255, 0.02)';
 
             return (
-              <g key={zone.id}>
+              <g key={`${zone.alliance}-${zone.id}`}>
                 <rect
                   x={zone.x}
                   y={zone.y}
@@ -195,10 +207,10 @@ export default function RagnarokFieldHeatmap({
                   textAnchor="middle"
                   dominantBaseline="central"
                   fill={active ? '#FAFAFA' : '#52525B'}
-                  fontSize="9.5"
-                  fontWeight="800"
+                  fontSize="11"
+                  fontWeight="900"
                 >
-                  {zone.code}
+                  {zone.id}
                 </text>
                 {stat && (
                   <text

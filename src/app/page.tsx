@@ -796,7 +796,11 @@ export default function RagnarokAnalyticsPage() {
                           Favorita: {selectedTeam.topStartPos}
                         </span>
                       </div>
-                      <RagnarokFieldHeatmap positions={selectedTeam.positions} teamNumber={selectedTeam.team} />
+                      <RagnarokFieldHeatmap
+                        positions={selectedTeam.positions}
+                        sidePositions={selectedTeam.sidePositions}
+                        teamNumber={selectedTeam.team}
+                      />
                     </div>
                   </div>
                 </div>

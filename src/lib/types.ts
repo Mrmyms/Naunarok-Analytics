@@ -71,6 +71,7 @@ export interface TeamAnalytics {
   swarmPtsAvg: number;
   topStartPos: string;
   positions: Record<string, { count: number; pct: number }>;
+  sidePositions?: Record<string, { count: number; pct: number }>;
   notes: { match: number; scouter: string; alliance: string; note: string; status: string }[];
   history: MatchRecord[];
 }

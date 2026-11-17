@@ -58,9 +58,11 @@ export async function GET() {
           timestamp: formatSerialDate(r[0]),
           match: toNum(r[1], idx + 1),
           team,
-          alliance: String(r[3] ?? 'AZUL').toUpperCase() === 'ROJO' ? 'ROJO' : 'AZUL',
+          alliance: ['ROJO', 'ROJA', 'RED'].includes(String(r[3] ?? 'AZUL').trim().toUpperCase()) ? 'ROJO' : 'AZUL',
           scouter: String(r[4] ?? 'Scouter'),
-          startPos: String(r[5] ?? 'Sin pos.'),
+          startPos: /^[A-E]$/i.test(String(r[5] ?? '').trim())
+            ? String(r[5] ?? '').trim().toUpperCase()
+            : String(r[5] ?? 'Sin pos.').trim(),
           autoLeave: toBool(r[6]),
           autoPark: toBool(r[7]),
           autoHivePollen: toNum(r[8]),
@@ -112,13 +114,44 @@ export async function GET() {
       const pct = (fn: (m: MatchRecord) => boolean) =>
         teamMatches.length ? Math.round((teamMatches.filter(fn).length / teamMatches.length) * 1000) / 10 : 0;
 
+      const LEGACY_GRID_TO_LETTER: Record<string, { side: 'red' | 'blue'; letter: string }> = {
+        C1: { side: 'red', letter: 'A' },
+        A1: { side: 'red', letter: 'B' },
+        A2: { side: 'red', letter: 'C' },
+        A6: { side: 'red', letter: 'D' },
+        C6: { side: 'red', letter: 'E' },
+        D6: { side: 'blue', letter: 'A' },
+        F6: { side: 'blue', letter: 'B' },
+        F5: { side: 'blue', letter: 'C' },
+        F1: { side: 'blue', letter: 'D' },
+        D1: { side: 'blue', letter: 'E' },
+      };
+
       const positionsCount: Record<string, number> = {};
+      const sidePositionsCount: Record<string, number> = {};
       for (const m of teamMatches) {
         if (!m.startPos || m.startPos === 'Sin pos.') continue;
-        positionsCount[m.startPos] = (positionsCount[m.startPos] || 0) + 1;
+        const raw = m.startPos.trim();
+        const upper = raw.toUpperCase();
+        const side: 'red' | 'blue' = m.alliance === 'ROJO' ? 'red' : 'blue';
+
+        if (/^[A-E]$/.test(upper)) {
+          positionsCount[upper] = (positionsCount[upper] || 0) + 1;
+          const sideKey = `${side}:${upper}`;
+          sidePositionsCount[sideKey] = (sidePositionsCount[sideKey] || 0) + 1;
+        } else {
+          positionsCount[raw] = (positionsCount[raw] || 0) + 1;
+          const legacyCode = upper.slice(0, 2);
+          const mapped = LEGACY_GRID_TO_LETTER[legacyCode];
+          if (mapped) {
+            const sideKey = `${mapped.side}:${mapped.letter}`;
+            sidePositionsCount[sideKey] = (sidePositionsCount[sideKey] || 0) + 1;
+          }
+        }
       }
       const totalPos = Object.values(positionsCount).reduce((a, b) => a + b, 0);
       const positions: Record<string, { count: number; pct: number }> = {};
+      const sidePositions: Record<string, { count: number; pct: number }> = {};
       let topStartPos = '—';
       let topPosCount = 0;
       for (const [pos, c] of Object.entries(positionsCount)) {
@@ -127,6 +160,9 @@ export async function GET() {
           topPosCount = c;
           topStartPos = pos;
         }
+      }
+      for (const [sideKey, c] of Object.entries(sidePositionsCount)) {
+        sidePositions[sideKey] = { count: c, pct: totalPos ? Math.round((c / totalPos) * 100) : 0 };
       }
 
       const nets = teamMatches.map((m) => m.netScore);
@@ -186,6 +222,7 @@ export async function GET() {
         ) / 10,
         topStartPos,
         positions,
+        sidePositions,
         notes: teamMatches
           .filter((m) => m.notes.trim().length > 0 || m.status !== '100% Operativo' || m.cards !== 'Ninguna')
           .map((m) => ({
