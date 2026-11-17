@@ -30,23 +30,38 @@ const ALL_ZONES: ZoneDef[] = [
 const COLS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const ROWS = ['6', '5', '4', '3', '2', '1'];
 
+export interface FieldMarker {
+  slot: string;
+  team: number;
+  startPos: string;
+  alliance: 'red' | 'blue';
+}
+
 export default function RagnarokFieldHeatmap({
   positions,
   teamNumber,
+  markers,
 }: {
-  positions: Record<string, { count: number; pct: number }>;
+  positions?: Record<string, { count: number; pct: number }>;
   teamNumber?: number;
+  markers?: FieldMarker[];
 }) {
   // Match both exact new zone IDs (e.g. "D1 · Audience") and legacy strings
   const getZoneStats = (zone: ZoneDef) => {
+    if (!positions) return null;
     if (positions[zone.id]) return positions[zone.id];
     const byCode = Object.entries(positions).find(([k]) => k.startsWith(zone.code));
     return byCode ? byCode[1] : null;
   };
 
-  const unmappedEntries = Object.entries(positions).filter(
-    ([k]) => !ALL_ZONES.some((z) => k === z.id || k.startsWith(z.code))
-  );
+  const getZoneMarkers = (zone: ZoneDef) => {
+    if (!markers?.length) return [];
+    return markers.filter((m) => m.startPos === zone.id || m.startPos.startsWith(zone.code));
+  };
+
+  const unmappedEntries = positions
+    ? Object.entries(positions).filter(([k]) => !ALL_ZONES.some((z) => k === z.id || k.startsWith(z.code)))
+    : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -137,19 +152,29 @@ export default function RagnarokFieldHeatmap({
           {/* Heatmap Starting Zones */}
           {ALL_ZONES.map((zone) => {
             const stat = getZoneStats(zone);
-            const active = !!stat;
+            const zoneMarkers = getZoneMarkers(zone);
+            const active = !!stat || zoneMarkers.length > 0;
+            const hasConflict = zoneMarkers.length > 1;
             const cx = zone.x + zone.w / 2;
             const cy = zone.y + zone.h / 2;
-            const strokeColor = active
-              ? zone.alliance === 'red'
-                ? '#E11D48'
-                : '#06B6D4'
-              : '#27272E';
-            const fillColor = active
-              ? zone.alliance === 'red'
-                ? `rgba(225, 29, 72, ${0.18 + (stat.pct / 100) * 0.45})`
-                : `rgba(6, 182, 212, ${0.18 + (stat.pct / 100) * 0.45})`
-              : 'rgba(255, 255, 255, 0.02)';
+            const strokeColor = hasConflict
+              ? '#F59E0B'
+              : active
+                ? zone.alliance === 'red'
+                  ? '#E11D48'
+                  : '#06B6D4'
+                : '#27272E';
+            const fillColor = hasConflict
+              ? 'rgba(245, 158, 11, 0.28)'
+              : stat
+                ? zone.alliance === 'red'
+                  ? `rgba(225, 29, 72, ${0.18 + (stat.pct / 100) * 0.45})`
+                  : `rgba(6, 182, 212, ${0.18 + (stat.pct / 100) * 0.45})`
+                : zoneMarkers.length > 0
+                  ? zone.alliance === 'red'
+                    ? 'rgba(225, 29, 72, 0.32)'
+                    : 'rgba(6, 182, 212, 0.32)'
+                  : 'rgba(255, 255, 255, 0.02)';
 
             return (
               <g key={zone.id}>
@@ -166,19 +191,19 @@ export default function RagnarokFieldHeatmap({
                 />
                 <text
                   x={cx}
-                  y={active ? cy - 6 : cy}
+                  y={active ? cy - 7 : cy}
                   textAnchor="middle"
                   dominantBaseline="central"
                   fill={active ? '#FAFAFA' : '#52525B'}
-                  fontSize="10"
+                  fontSize="9.5"
                   fontWeight="800"
                 >
                   {zone.code}
                 </text>
-                {active && (
+                {stat && (
                   <text
                     x={cx}
-                    y={cy + 8}
+                    y={cy + 7}
                     textAnchor="middle"
                     dominantBaseline="central"
                     fill="#F59E0B"
@@ -188,6 +213,19 @@ export default function RagnarokFieldHeatmap({
                     {stat.pct}%
                   </text>
                 )}
+                {!stat && zoneMarkers.length > 0 && (
+                  <text
+                    x={cx}
+                    y={cy + 7}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={hasConflict ? '#F59E0B' : '#FAFAFA'}
+                    fontSize="8"
+                    fontWeight="900"
+                  >
+                    {zoneMarkers.map((m) => `#${m.team}`).join(' ')}
+                  </text>
+                )}
               </g>
             );
           })}
@@ -195,7 +233,7 @@ export default function RagnarokFieldHeatmap({
       </div>
 
       {/* Legacy or custom position pills */}
-      {(unmappedEntries.length > 0 || Object.keys(positions).length === 0) && (
+      {!markers && positions && (unmappedEntries.length > 0 || Object.keys(positions).length === 0) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center' }}>
           {Object.keys(positions).length === 0 ? (
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>

@@ -117,38 +117,45 @@ export default function DistributionBars({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Leyenda unificada de zonas */}
+      <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '10.5px', fontWeight: 800 }}>
+        <span style={{ color: '#60A5FA' }}>■ BALANCÍN (Azules)</span>
+        <span style={{ color: '#F87171' }}>■ FLOWER (Rojos)</span>
+        <span style={{ color: '#34D399' }}>■ GARDEN (Verdes)</span>
+      </div>
+
       <SegmentedBarRow
         title="Auto Piece Distribution"
-        accentColor="#06B6D4"
+        accentColor="#3B82F6"
         totalLabel={`${autoTotal.toFixed(1)} pzs`}
         segments={[
-          { label: 'Bal. Polen', value: autoBalPollen, color: '#F59E0B' },
-          { label: 'Bal. Néctar', value: autoBalNectar, color: '#A855F7' },
-          { label: 'Flor Polen', value: autoFlorPollen, color: '#06B6D4' },
-          { label: 'Flor Néctar', value: autoFlorNectar, color: '#E11D48' },
+          { label: 'Bal. Polen', value: autoBalPollen, color: '#60A5FA' },
+          { label: 'Bal. Néctar', value: autoBalNectar, color: '#2563EB' },
+          { label: 'Flor Polen', value: autoFlorPollen, color: '#FB7185' },
+          { label: 'Flor Néctar', value: autoFlorNectar, color: '#DC2626' },
         ]}
       />
 
       <SegmentedBarRow
         title="TeleOp Piece Distribution"
-        accentColor="#F59E0B"
+        accentColor="#E11D48"
         totalLabel={`${teleTotal.toFixed(1)} pzs`}
         segments={[
-          { label: 'Bal. Polen', value: teleBalPollen, color: '#F59E0B' },
-          { label: 'Bal. Néctar', value: teleBalNectar, color: '#A855F7' },
-          { label: 'Flor Polen', value: teleFlorPollen, color: '#06B6D4' },
-          { label: 'Flor Néctar', value: teleFlorNectar, color: '#E11D48' },
+          { label: 'Bal. Polen', value: teleBalPollen, color: '#60A5FA' },
+          { label: 'Bal. Néctar', value: teleBalNectar, color: '#2563EB' },
+          { label: 'Flor Polen', value: teleFlorPollen, color: '#FB7185' },
+          { label: 'Flor Néctar', value: teleFlorNectar, color: '#DC2626' },
           { label: 'Garden', value: gardenAvg, color: '#10B981' },
         ]}
       />
 
       <SegmentedBarRow
-        title="Total Match Distribution (Balancín vs Flor vs Garden)"
-        accentColor="#E11D48"
+        title="Total Match Distribution (Balancín · Flower · Garden)"
+        accentColor="#10B981"
         totalLabel={`${grandTotal.toFixed(1)} pzs`}
         segments={[
-          { label: 'Balancín Total', value: autoBalPollen + autoBalNectar + teleBalPollen + teleBalNectar, color: '#F59E0B' },
-          { label: 'Flor Total', value: autoFlorPollen + autoFlorNectar + teleFlorPollen + teleFlorNectar, color: '#06B6D4' },
+          { label: 'Balancín Total', value: autoBalPollen + autoBalNectar + teleBalPollen + teleBalNectar, color: '#3B82F6' },
+          { label: 'Flower Total', value: autoFlorPollen + autoFlorNectar + teleFlorPollen + teleFlorNectar, color: '#E11D48' },
           { label: 'Garden Total', value: gardenAvg, color: '#10B981' },
         ]}
       />

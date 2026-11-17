@@ -52,7 +52,9 @@ export interface TeamAnalytics {
   maxNet: number;
   minNet: number;
   maxAuto: number;
+  minAuto: number;
   maxTele: number;
+  minTele: number;
   autoHivePollenAvg: number;
   autoHiveNectarAvg: number;
   autoFlowerPollenAvg: number;

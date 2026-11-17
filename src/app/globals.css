@@ -282,6 +282,9 @@ body {
 }
 
 .rag-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: var(--bg-carbon);
   color: var(--text-muted);
   font-size: 10px;
@@ -292,6 +295,14 @@ body {
   border-bottom: 2px solid var(--rag-red);
   cursor: pointer;
   user-select: none;
+}
+
+.rag-table tbody tr.drafted-row {
+  opacity: 0.42;
+}
+
+.rag-table tbody tr.drafted-row td:nth-child(2) {
+  text-decoration: line-through;
 }
 
 .rag-table thead th:hover {
