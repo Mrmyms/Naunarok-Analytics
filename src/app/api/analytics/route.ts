@@ -26,6 +26,26 @@ function toBool(v: unknown): boolean {
   return s === 'SI' || s === 'SÍ' || s === 'TRUE' || s === '1';
 }
 
+function parseFlowerOwnedCount(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return Math.max(0, Math.min(4, Math.round(v)));
+  }
+  const s = String(v ?? '').trim();
+  if (!s) return 0;
+  const upper = s.toUpperCase();
+  if (upper === 'CONTROLÓ FLOR' || upper === 'CONTROLO FLOR' || upper === 'SI' || upper === 'SÍ' || upper === 'TRUE') {
+    return 1;
+  }
+  if (upper === 'NINGUNA' || upper === 'PERDIÓ CONTROL' || upper === 'PERDIO CONTROL' || upper === 'NO COMPITIÓ' || upper === 'NO COMPITIO' || upper === 'NO') {
+    return 0;
+  }
+  const match = s.match(/^(\d+)/);
+  if (match) {
+    return Math.max(0, Math.min(4, Number(match[1])));
+  }
+  return 0;
+}
+
 function formatSerialDate(v: unknown): string {
   if (typeof v === 'number' && v > 25000) {
     // Convert Google Sheets serial number (days since 1899-12-30) to readable string
@@ -71,7 +91,8 @@ export async function GET() {
           autoFlowerNectar: toNum(r[11]),
           teleopHivePollen: toNum(r[12]),
           teleopHiveNectar: toNum(r[13]),
-          flowerOwnership: String(r[14] ?? 'No compitió'),
+          flowerOwnership: String(r[14] ?? '0'),
+          flowerOwnedCount: parseFlowerOwnedCount(r[14]),
           teleopFlowerPollen: toNum(r[15]),
           teleopFlowerNectar: toNum(r[16]),
           bottomNectar: toBool(r[17]),
@@ -169,24 +190,29 @@ export async function GET() {
       const autos = teamMatches.map((m) => m.autoScore);
       const teles = teamMatches.map((m) => m.teleScore);
 
-      const epaNetAvg = resumenRow ? toNum(resumenRow[3]) : avg((m) => m.netScore);
-      const autoAvg = resumenRow ? toNum(resumenRow[4]) : avg((m) => m.autoScore);
-      const teleAvg = resumenRow ? toNum(resumenRow[5]) : avg((m) => m.teleScore);
-      const balancinAutoAvg = resumenRow ? toNum(resumenRow[6]) : avg((m) => m.autoHivePollen + m.autoHiveNectar);
-      const balancinTeleAvg = resumenRow ? toNum(resumenRow[7]) : avg((m) => m.teleopHivePollen + m.teleopHiveNectar);
-      const florAvg = resumenRow
-        ? toNum(resumenRow[8])
+      // Trust Resumen_Equipos only when its match count matches Captura_BIOBUZZ (avoids stale sheet refs overriding new matches)
+      const resumenCount = resumenRow ? toNum(resumenRow[2], 0) : 0;
+      const useResumen = Boolean(resumenRow && (teamMatches.length === 0 || resumenCount === teamMatches.length));
+
+      const epaNetAvg = useResumen ? toNum(resumenRow![3]) : avg((m) => m.netScore);
+      const autoAvg = useResumen ? toNum(resumenRow![4]) : avg((m) => m.autoScore);
+      const teleAvg = useResumen ? toNum(resumenRow![5]) : avg((m) => m.teleScore);
+      const balancinAutoAvg = useResumen ? toNum(resumenRow![6]) : avg((m) => m.autoHivePollen + m.autoHiveNectar);
+      const balancinTeleAvg = useResumen ? toNum(resumenRow![7]) : avg((m) => m.teleopHivePollen + m.teleopHiveNectar);
+      const florAvg = useResumen
+        ? toNum(resumenRow![8])
         : avg((m) => m.autoFlowerPollen + m.autoFlowerNectar + m.teleopFlowerPollen + m.teleopFlowerNectar);
-      const gardenAvg = resumenRow ? toNum(resumenRow[9]) : avg((m) => m.gardenElements);
-      const flowerControlPct = resumenRow ? toPct(resumenRow[10]) : pct((m) => m.flowerOwnership === 'Controló Flor');
-      const reliabilityPct = resumenRow ? toPct(resumenRow[11]) : pct((m) => m.status === '100% Operativo');
-      const foulsAvg = resumenRow ? toNum(resumenRow[12]) : avg((m) => m.foulsScore);
-      const driverAvg = resumenRow ? toNum(resumenRow[13], 3) : avg((m) => m.driverSkill);
+      const gardenAvg = useResumen ? toNum(resumenRow![9]) : avg((m) => m.gardenElements);
+      const flowersOwnedAvg = Math.round(avg((m) => m.flowerOwnedCount) * 10) / 10;
+      const flowerControlPct = useResumen ? toPct(resumenRow![10]) : pct((m) => m.flowerOwnedCount > 0);
+      const reliabilityPct = useResumen ? toPct(resumenRow![11]) : pct((m) => m.status === '100% Operativo');
+      const foulsAvg = useResumen ? toNum(resumenRow![12]) : avg((m) => m.foulsScore);
+      const driverAvg = useResumen ? toNum(resumenRow![13], 3) : avg((m) => m.driverSkill);
 
       return {
-        rank: resumenRow ? toNum(resumenRow[0], fallbackRank) : fallbackRank,
+        rank: useResumen ? toNum(resumenRow![0], fallbackRank) : fallbackRank,
         team: teamNum,
-        matchesPlayed: resumenRow ? toNum(resumenRow[2], count) : count,
+        matchesPlayed: useResumen ? toNum(resumenRow![2], count) : count,
         epaNetAvg: Math.round(epaNetAvg * 10) / 10,
         autoAvg: Math.round(autoAvg * 10) / 10,
         teleAvg: Math.round(teleAvg * 10) / 10,
@@ -195,6 +221,7 @@ export async function GET() {
         florAvg: Math.round(florAvg * 10) / 10,
         gardenAvg: Math.round(gardenAvg * 10) / 10,
         flowerControlPct,
+        flowersOwnedAvg,
         reliabilityPct,
         foulsAvg: Math.round(foulsAvg * 10) / 10,
         driverAvg: Math.round(driverAvg * 10) / 10,
@@ -254,7 +281,10 @@ export async function GET() {
       }
     }
 
-    teams.sort((a, b) => a.rank - b.rank || b.epaNetAvg - a.epaNetAvg);
+    teams.sort((a, b) => b.epaNetAvg - a.epaNetAvg || a.rank - b.rank);
+    teams.forEach((t, idx) => {
+      t.rank = idx + 1;
+    });
 
     return NextResponse.json({
       success: true,

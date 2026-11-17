@@ -15,6 +15,7 @@ export interface MatchRecord {
   teleopHivePollen: number;
   teleopHiveNectar: number;
   flowerOwnership: string;
+  flowerOwnedCount: number;
   teleopFlowerPollen: number;
   teleopFlowerNectar: number;
   bottomNectar: boolean;
@@ -45,6 +46,7 @@ export interface TeamAnalytics {
   florAvg: number;
   gardenAvg: number;
   flowerControlPct: number;
+  flowersOwnedAvg: number;
   reliabilityPct: number;
   foulsAvg: number;
   driverAvg: number;

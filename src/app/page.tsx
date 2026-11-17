@@ -726,7 +726,7 @@ export default function RagnarokAnalyticsPage() {
                           { l: 'Auto Leave', v: `${selectedTeam.autoLeavePct.toFixed(0)}%`, c: '#A1A1AA' },
                           { l: 'Auto Park', v: `${selectedTeam.autoParkPct.toFixed(0)}%`, c: '#A1A1AA' },
                           { l: 'Endgame Park', v: `${selectedTeam.endgameParkPct.toFixed(0)}%`, c: '#F59E0B' },
-                          { l: 'Control Flor', v: `${selectedTeam.flowerControlPct.toFixed(0)}%`, c: '#FB7185' },
+                          { l: 'Control Flor', v: `${selectedTeam.flowerControlPct.toFixed(0)}% · ${selectedTeam.flowersOwnedAvg.toFixed(1)} fl.`, c: '#FB7185' },
                           { l: 'Bottom Nectar', v: `${selectedTeam.bottomNectarPct.toFixed(0)}%`, c: '#F87171' },
                           { l: 'Descore Garden', v: `${selectedTeam.gardenDescorePct.toFixed(0)}%`, c: '#34D399' },
                         ].map((m) => (
@@ -845,7 +845,9 @@ export default function RagnarokAnalyticsPage() {
                             <td style={{ color: '#FDA4AF' }}>{m.autoFlowerPollen} / {m.autoFlowerNectar}</td>
                             <td style={{ color: '#60A5FA', fontWeight: 800 }}>{m.teleopHivePollen} / {m.teleopHiveNectar}</td>
                             <td style={{ color: '#FB7185', fontWeight: 800 }}>{m.teleopFlowerPollen} / {m.teleopFlowerNectar}</td>
-                            <td style={{ color: '#F87171' }}>{m.flowerOwnership}</td>
+                            <td style={{ color: m.flowerOwnedCount > 0 ? '#FB7185' : 'var(--text-muted)', fontWeight: m.flowerOwnedCount > 0 ? 800 : 600 }}>
+                              {m.flowerOwnedCount}
+                            </td>
                             <td style={{ color: '#34D399', fontWeight: 800 }}>{m.gardenElements}</td>
                             <td style={{ color: m.status === '100% Operativo' ? 'var(--accent-emerald)' : 'var(--rag-coral)' }}>
                               {m.status}
