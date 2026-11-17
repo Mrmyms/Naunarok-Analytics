@@ -129,9 +129,9 @@ export default function DistributionBars({
         accentColor="#3B82F6"
         totalLabel={`${autoTotal.toFixed(1)} pzs`}
         segments={[
-          { label: 'Bal. Polen', value: autoBalPollen, color: '#60A5FA' },
+          { label: 'Bal. POLLEN', value: autoBalPollen, color: '#60A5FA' },
           { label: 'Bal. Néctar', value: autoBalNectar, color: '#2563EB' },
-          { label: 'Flor Polen', value: autoFlorPollen, color: '#FB7185' },
+          { label: 'Flor POLLEN', value: autoFlorPollen, color: '#FB7185' },
           { label: 'Flor Néctar', value: autoFlorNectar, color: '#DC2626' },
         ]}
       />
@@ -141,9 +141,9 @@ export default function DistributionBars({
         accentColor="#E11D48"
         totalLabel={`${teleTotal.toFixed(1)} pzs`}
         segments={[
-          { label: 'Bal. Polen', value: teleBalPollen, color: '#60A5FA' },
+          { label: 'Bal. POLLEN', value: teleBalPollen, color: '#60A5FA' },
           { label: 'Bal. Néctar', value: teleBalNectar, color: '#2563EB' },
-          { label: 'Flor Polen', value: teleFlorPollen, color: '#FB7185' },
+          { label: 'Flor POLLEN', value: teleFlorPollen, color: '#FB7185' },
           { label: 'Flor Néctar', value: teleFlorNectar, color: '#DC2626' },
           { label: 'Garden', value: gardenAvg, color: '#10B981' },
         ]}
