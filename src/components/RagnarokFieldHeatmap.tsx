@@ -6,25 +6,94 @@ type ZoneDef = {
   id: 'A' | 'B' | 'C' | 'D' | 'E';
   code: string;
   alliance: 'red' | 'blue';
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  cx: number;
+  cy: number;
+  path: string;
 };
 
 const ALL_ZONES: ZoneDef[] = [
   // Red Alliance Zones (Columns A-C, 180deg mirror of Blue)
-  { id: 'A', code: 'C1', alliance: 'red', x: 120, y: 304, w: 77, h: 49 },
-  { id: 'B', code: 'A1', alliance: 'red', x: 35, y: 299, w: 53, h: 48 },
-  { id: 'C', code: 'A2', alliance: 'red', x: 35, y: 222, w: 49, h: 74 },
-  { id: 'D', code: 'A6', alliance: 'red', x: 35, y: 23, w: 51, h: 49 },
-  { id: 'E', code: 'C6', alliance: 'red', x: 147, y: 23, w: 50, h: 47 },
+  {
+    id: 'A',
+    code: 'C1',
+    alliance: 'red',
+    cx: 143,
+    cy: 328.5,
+    path: 'M 89 308 Q 89 304 93 304 L 193 304 Q 197 304 197 308 L 197 349 Q 197 353 193 353 L 93 353 Q 89 353 89 349 Z',
+  },
+  {
+    id: 'B',
+    code: 'A1',
+    alliance: 'red',
+    cx: 61.5,
+    cy: 323,
+    path: 'M 35 303 Q 35 299 39 299 L 84 299 Q 88 299 88 303 L 88 343 Q 88 347 84 347 L 39 347 Q 35 347 35 343 Z',
+  },
+  {
+    id: 'C',
+    code: 'A2',
+    alliance: 'red',
+    cx: 59.5,
+    cy: 259,
+    path: 'M 35 226 Q 35 222 39 222 L 80 222 Q 84 222 84 226 L 84 292 Q 84 296 80 296 L 39 296 Q 35 296 35 292 Z',
+  },
+  {
+    id: 'D',
+    code: 'A6',
+    alliance: 'red',
+    cx: 60.5,
+    cy: 48,
+    path: 'M 86 187 Q 86 191 82 191 L 39 191 Q 35 191 35 187 L 35 139 Q 35 135 39 135 L 58 135 Q 62 135 62 131 L 62 77 Q 62 73 58 73 L 39 73 Q 35 73 35 69 L 35 27 Q 35 23 39 23 L 82 23 Q 86 23 86 27 Z',
+  },
+  {
+    id: 'E',
+    code: 'C6',
+    alliance: 'red',
+    cx: 169,
+    cy: 48,
+    path: 'M 193 72 L 91 72 Q 87 72 87 68 L 87 27 Q 87 23 91 23 L 122.4 23 A 12 12 0 0 0 145.6 23 L 193 23 Q 197 23 197 27 L 197 68 Q 197 72 193 72 Z',
+  },
   // Blue Alliance Zones (Columns D-F)
-  { id: 'A', code: 'D6', alliance: 'blue', x: 203, y: 23, w: 77, h: 47 },
-  { id: 'B', code: 'F6', alliance: 'blue', x: 312, y: 24, w: 53, h: 48 },
-  { id: 'C', code: 'F5', alliance: 'blue', x: 316, y: 78, w: 49, h: 74 },
-  { id: 'D', code: 'F1', alliance: 'blue', x: 314, y: 304, w: 51, h: 49 },
-  { id: 'E', code: 'D1', alliance: 'blue', x: 203, y: 304, w: 50, h: 49 },
+  {
+    id: 'A',
+    code: 'D6',
+    alliance: 'blue',
+    cx: 257,
+    cy: 47.5,
+    path: 'M 203 27 Q 203 23 207 23 L 307 23 Q 311 23 311 27 L 311 68 Q 311 72 307 72 L 207 72 Q 203 72 203 68 Z',
+  },
+  {
+    id: 'B',
+    code: 'F6',
+    alliance: 'blue',
+    cx: 338.5,
+    cy: 48,
+    path: 'M 312 28 Q 312 24 316 24 L 361 24 Q 365 24 365 28 L 365 68 Q 365 72 361 72 L 316 72 Q 312 72 312 68 Z',
+  },
+  {
+    id: 'C',
+    code: 'F5',
+    alliance: 'blue',
+    cx: 340.5,
+    cy: 115,
+    path: 'M 316 82 Q 316 78 320 78 L 361 78 Q 365 78 365 82 L 365 148 Q 365 152 361 152 L 320 152 Q 316 152 316 148 Z',
+  },
+  {
+    id: 'D',
+    code: 'F1',
+    alliance: 'blue',
+    cx: 339.5,
+    cy: 328,
+    path: 'M 314 189 Q 314 185 318 185 L 361 185 Q 365 185 365 189 L 365 237 Q 365 241 361 241 L 342 241 Q 338 241 338 245 L 338 299 Q 338 303 342 303 L 361 303 Q 365 303 365 307 L 365 349 Q 365 353 361 353 L 318 353 Q 314 353 314 349 Z',
+  },
+  {
+    id: 'E',
+    code: 'D1',
+    alliance: 'blue',
+    cx: 229,
+    cy: 328.5,
+    path: 'M 207 304 L 309 304 Q 313 304 313 308 L 313 349 Q 313 353 309 353 L 277.6 353 A 12 12 0 0 0 254.4 353 L 207 353 Q 203 353 203 349 L 203 308 Q 203 304 207 304 Z',
+  },
 ];
 
 const COLS = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -167,8 +236,7 @@ export default function RagnarokFieldHeatmap({
             const zoneMarkers = getZoneMarkers(zone);
             const active = !!stat || zoneMarkers.length > 0;
             const hasConflict = zoneMarkers.length > 1;
-            const cx = zone.x + zone.w / 2;
-            const cy = zone.y + zone.h / 2;
+            const { cx, cy } = zone;
             const strokeColor = hasConflict
               ? '#FFD166'
               : active
@@ -190,12 +258,8 @@ export default function RagnarokFieldHeatmap({
 
             return (
               <g key={`${zone.alliance}-${zone.id}`}>
-                <rect
-                  x={zone.x}
-                  y={zone.y}
-                  width={zone.w}
-                  height={zone.h}
-                  rx="4"
+                <path
+                  d={zone.path}
                   fill={fillColor}
                   stroke={strokeColor}
                   strokeWidth={active ? 2 : 1}
