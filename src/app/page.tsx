@@ -302,16 +302,20 @@ export default function RagnarokAnalyticsPage() {
       {/* Top Pit-Wall Bar */}
       <header className="topbar">
         <div className="topbar-inner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <img
-              src="/ragnarok-logo.svg"
-              alt="Logo Ragnarok"
-              width={54}
-              height={58}
-              style={{ display: 'block', flexShrink: 0, filter: 'drop-shadow(0 0 8px rgba(214, 20, 54, 0.45))' }}
+              src="/beyonder-logo.svg"
+              alt="Logo The Beyonder"
+              width={40}
+              height={40}
+              style={{
+                display: 'block',
+                flexShrink: 0,
+                filter: 'drop-shadow(0 0 8px rgba(225, 29, 72, 0.4))',
+              }}
             />
-            <div style={{ fontSize: '17px', fontWeight: 900, letterSpacing: '0.8px', color: '#FAFAFA' }}>
-              RAGNAROK <span style={{ color: 'var(--rag-crimson)' }}>ANALYTICS</span>
+            <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.8px', color: '#FAFAFA' }}>
+              THE <span style={{ color: 'var(--rag-crimson)' }}>BEYONDER</span>
             </div>
           </div>
 

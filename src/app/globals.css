@@ -7,9 +7,9 @@
   --border-steel: #27272E;
   --border-steel-bright: #3A3A44;
 
-  /* Rojos Ragnarok (oficial del nuevo emblema) */
-  --rag-crimson: #DF1738;
-  --rag-red: #BE1130;
+  /* Rojos Ragnarok */
+  --rag-crimson: #E11D48;
+  --rag-red: #DC2626;
   --rag-blood: #450A0A;
   --rag-coral: #FCA5A5;
 
@@ -64,7 +64,7 @@ body {
 .topbar-inner {
   max-width: 1360px;
   margin: 0 auto;
-  padding: 9px 18px;
+  padding: 12px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -1,4 +1,4 @@
-# Ragnarok Analytics • FTC BIOBUZZ (2026–2027)
+# The Beyonder • FTC BIOBUZZ (2026–2027)
 
 Dashboard de telemetría avanzada, picklist y simulador de alianzas 2v2 conectado en vivo a Google Sheets (`Resumen_Equipos` + `Captura_BIOBUZZ`) y FTCScout.
 

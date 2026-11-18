@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'RAGNAROK ANALYTICS • FTC BIOBUZZ Telemetry',
+  title: 'THE BEYONDER • FTC BIOBUZZ Telemetry',
   description: 'Centro de mando, picklist y simulador de alianzas 2v2 para FTC BIOBUZZ (2026–2027)',
 };
 
