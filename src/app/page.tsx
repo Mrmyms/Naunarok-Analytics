@@ -306,9 +306,9 @@ export default function RagnarokAnalyticsPage() {
             <img
               src="/ragnarok-logo.svg"
               alt="Logo Ragnarok"
-              width={56}
-              height={47}
-              style={{ display: 'block', flexShrink: 0, filter: 'drop-shadow(0 0 8px rgba(237, 18, 21, 0.42))' }}
+              width={54}
+              height={58}
+              style={{ display: 'block', flexShrink: 0, filter: 'drop-shadow(0 0 8px rgba(214, 20, 54, 0.45))' }}
             />
             <div style={{ fontSize: '17px', fontWeight: 900, letterSpacing: '0.8px', color: '#FAFAFA' }}>
               RAGNAROK <span style={{ color: 'var(--rag-crimson)' }}>ANALYTICS</span>
