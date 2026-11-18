@@ -14,7 +14,7 @@ export default function DuelComparisonBars({
   leftTitle,
   rightTitle,
   leftColor = '#E11D48',
-  rightColor = '#06B6D4',
+  rightColor = '#38BDF8',
   metrics,
 }: {
   leftTitle: string;
@@ -60,8 +60,8 @@ export default function DuelComparisonBars({
                 style={{
                   height: '7px',
                   width: '100%',
-                  background: '#09090B',
-                  border: '1px solid #27272E',
+                  background: '#090A0F',
+                  border: '1px solid #23283D',
                   borderRadius: '2px',
                   overflow: 'hidden',
                   display: 'flex',

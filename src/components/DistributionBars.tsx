@@ -47,15 +47,15 @@ function SegmentedBarRow({
         style={{
           height: '12px',
           width: '100%',
-          background: '#09090B',
+          background: '#090A0F',
           borderRadius: '3px',
           overflow: 'hidden',
           display: 'flex',
-          border: '1px solid #27272E',
+          border: '1px solid #23283D',
         }}
       >
         {total === 0 ? (
-          <div style={{ width: '100%', background: '#1F1F26' }} />
+          <div style={{ width: '100%', background: '#1A1E2E' }} />
         ) : (
           segments.map((seg) =>
             seg.value > 0 ? (

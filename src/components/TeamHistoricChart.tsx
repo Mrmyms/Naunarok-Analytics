@@ -53,9 +53,9 @@ export default function TeamHistoricChart({ history }: { history: MatchRecord[] 
       {/* Legend + Selected match readout */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11px', fontWeight: 700 }}>
-          <span style={{ color: '#E11D48' }}>● Neto</span>
-          <span style={{ color: '#06B6D4' }}>● Auto</span>
-          <span style={{ color: '#F59E0B' }}>● TeleOp</span>
+          <span style={{ color: '#A855F7' }}>● Neto</span>
+          <span style={{ color: '#38BDF8' }}>● Auto</span>
+          <span style={{ color: '#FFD166' }}>● TeleOp</span>
           <span style={{ color: '#FCA5A5' }}>┈ Faltas</span>
         </div>
 
@@ -73,18 +73,18 @@ export default function TeamHistoricChart({ history }: { history: MatchRecord[] 
             }}
           >
             M#{activeMatch.match} ({activeMatch.alliance}) · Neto{' '}
-            <strong style={{ color: '#E11D48' }}>{activeMatch.netScore}</strong> · Auto{' '}
-            <strong style={{ color: '#06B6D4' }}>{activeMatch.autoScore}</strong> · Tele{' '}
-            <strong style={{ color: '#F59E0B' }}>{activeMatch.teleScore}</strong>
+            <strong style={{ color: '#A855F7' }}>{activeMatch.netScore}</strong> · Auto{' '}
+            <strong style={{ color: '#38BDF8' }}>{activeMatch.autoScore}</strong> · Tele{' '}
+            <strong style={{ color: '#FFD166' }}>{activeMatch.teleScore}</strong>
           </div>
         )}
       </div>
 
-      <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ display: 'block', background: '#111116', borderRadius: '4px', border: '1px solid #27272E' }}>
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ display: 'block', background: '#0E1018', borderRadius: '4px', border: '1px solid #23283D' }}>
         <defs>
           <linearGradient id="ragNetArea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#E11D48" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#E11D48" stopOpacity="0.01" />
+            <stop offset="0%" stopColor="#A855F7" stopOpacity="0.30" />
+            <stop offset="100%" stopColor="#6366F1" stopOpacity="0.02" />
           </linearGradient>
         </defs>
 
@@ -94,8 +94,8 @@ export default function TeamHistoricChart({ history }: { history: MatchRecord[] 
           const y = getY(val);
           return (
             <g key={t}>
-              <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="#27272E" strokeWidth="1" />
-              <text x={padL - 6} y={y} textAnchor="end" dominantBaseline="central" fill="#71717A" fontSize="9" fontWeight="700">
+              <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="#23283D" strokeWidth="1" />
+              <text x={padL - 6} y={y} textAnchor="end" dominantBaseline="central" fill="#94A3B8" fontSize="9" fontWeight="700">
                 {val}
               </text>
             </g>
@@ -109,9 +109,9 @@ export default function TeamHistoricChart({ history }: { history: MatchRecord[] 
         {history.length > 1 && (
           <>
             <path d={buildPath(foulVals)} fill="none" stroke="#FCA5A5" strokeWidth="1.5" strokeDasharray="4 3" />
-            <path d={buildPath(autoVals)} fill="none" stroke="#06B6D4" strokeWidth="2" />
-            <path d={buildPath(teleVals)} fill="none" stroke="#F59E0B" strokeWidth="2" />
-            <path d={buildPath(netVals)} fill="none" stroke="#E11D48" strokeWidth="2.8" />
+            <path d={buildPath(autoVals)} fill="none" stroke="#38BDF8" strokeWidth="2" />
+            <path d={buildPath(teleVals)} fill="none" stroke="#FFD166" strokeWidth="2" />
+            <path d={buildPath(netVals)} fill="none" stroke="#A855F7" strokeWidth="2.8" />
           </>
         )}
 
@@ -126,20 +126,20 @@ export default function TeamHistoricChart({ history }: { history: MatchRecord[] 
                 y1={padT}
                 x2={cx}
                 y2={padT + plotH}
-                stroke={isActive ? 'rgba(225, 29, 72, 0.4)' : 'transparent'}
+                stroke={isActive ? 'rgba(168, 85, 247, 0.45)' : 'transparent'}
                 strokeWidth="1"
               />
-              <circle cx={cx} cy={getY(m.autoScore)} r={isActive ? 4 : 3} fill="#06B6D4" />
-              <circle cx={cx} cy={getY(m.teleScore)} r={isActive ? 4 : 3} fill="#F59E0B" />
+              <circle cx={cx} cy={getY(m.autoScore)} r={isActive ? 4 : 3} fill="#38BDF8" />
+              <circle cx={cx} cy={getY(m.teleScore)} r={isActive ? 4 : 3} fill="#FFD166" />
               <circle
                 cx={cx}
                 cy={getY(m.netScore)}
                 r={isActive ? 5.5 : 4}
-                fill="#E11D48"
-                stroke="#FAFAFA"
+                fill="#A855F7"
+                stroke="#F8FAFC"
                 strokeWidth={isActive ? 1.5 : 0.8}
               />
-              <text x={cx} y={height - 10} textAnchor="middle" fill={isActive ? '#FAFAFA' : '#71717A'} fontSize="9.5" fontWeight="700">
+              <text x={cx} y={height - 10} textAnchor="middle" fill={isActive ? '#F8FAFC' : '#94A3B8'} fontSize="9.5" fontWeight="700">
                 M{m.match}
               </text>
             </g>

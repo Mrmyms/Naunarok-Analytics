@@ -69,7 +69,7 @@ export default function TeamRadarChart({
               return `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
             })
             .join(' ');
-          return <polygon key={ring} points={pts} fill="none" stroke="#27272E" strokeWidth="1" />;
+          return <polygon key={ring} points={pts} fill="none" stroke="#23283D" strokeWidth="1" />;
         })}
 
         {/* Axis spokes & labels */}
@@ -83,10 +83,10 @@ export default function TeamRadarChart({
                 ? '#F87171'
                 : ax.label === 'GARDEN'
                   ? '#34D399'
-                  : '#A1A1AA';
+                  : '#94A3B8';
           return (
             <g key={ax.label}>
-              <line x1={cx} y1={cy} x2={outer.x} y2={outer.y} stroke="#27272E" strokeWidth="1" />
+              <line x1={cx} y1={cy} x2={outer.x} y2={outer.y} stroke="#23283D" strokeWidth="1" />
               <text
                 x={lbl.x}
                 y={lbl.y}
@@ -106,8 +106,8 @@ export default function TeamRadarChart({
         {compareAxes && (
           <polygon
             points={toPolygon(compareAxes)}
-            fill="rgba(6, 182, 212, 0.16)"
-            stroke="#06B6D4"
+            fill="rgba(56, 189, 248, 0.16)"
+            stroke="#38BDF8"
             strokeWidth="2"
           />
         )}
@@ -115,22 +115,22 @@ export default function TeamRadarChart({
         {/* Primary team polygon */}
         <polygon
           points={toPolygon(primaryAxes)}
-          fill="rgba(225, 29, 72, 0.25)"
-          stroke="#E11D48"
+          fill="rgba(168, 85, 247, 0.25)"
+          stroke="#A855F7"
           strokeWidth="2.2"
         />
 
         {/* Vertex dots */}
         {primaryAxes.map((ax, i) => {
           const p = pointAt(i, ax.val);
-          return <circle key={ax.label} cx={p.x} cy={p.y} r="3.2" fill="#E11D48" stroke="#FAFAFA" strokeWidth="1" />;
+          return <circle key={ax.label} cx={p.x} cy={p.y} r="3.2" fill="#A855F7" stroke="#F8FAFC" strokeWidth="1" />;
         })}
       </svg>
 
       {/* Legend */}
       <div className="tabular" style={{ display: 'flex', gap: '14px', fontSize: '11px', fontWeight: 800 }}>
-        <span style={{ color: '#E11D48' }}>■ #{team.team}</span>
-        {compareTeam && <span style={{ color: '#06B6D4' }}>■ #{compareTeam.team}</span>}
+        <span style={{ color: '#A855F7' }}>■ #{team.team}</span>
+        {compareTeam && <span style={{ color: '#38BDF8' }}>■ #{compareTeam.team}</span>}
       </div>
     </div>
   );

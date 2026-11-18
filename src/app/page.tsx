@@ -311,11 +311,20 @@ export default function RagnarokAnalyticsPage() {
               style={{
                 display: 'block',
                 flexShrink: 0,
-                filter: 'drop-shadow(0 0 8px rgba(225, 29, 72, 0.4))',
+                filter: 'drop-shadow(0 0 10px rgba(168, 85, 247, 0.45))',
               }}
             />
-            <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.8px', color: '#FAFAFA' }}>
-              THE <span style={{ color: 'var(--rag-crimson)' }}>BEYONDER</span>
+            <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.8px', color: 'var(--text-white)' }}>
+              THE{' '}
+              <span
+                style={{
+                  background: 'linear-gradient(90deg, #A855F7 0%, #6366F1 55%, #38BDF8 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                BEYONDER
+              </span>
             </div>
           </div>
 
@@ -552,7 +561,7 @@ export default function RagnarokAnalyticsPage() {
                             </span>
                           </td>
                           <td>{t.matchesPlayed}</td>
-                          <td style={{ fontWeight: 900, color: 'var(--rag-crimson)' }}>{t.epaNetAvg.toFixed(1)}</td>
+                          <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{t.epaNetAvg.toFixed(1)}</td>
                           <td style={{ color: 'var(--accent-cyan)' }}>{t.autoAvg.toFixed(1)}</td>
                           <td style={{ color: 'var(--accent-amber)' }}>{t.teleAvg.toFixed(1)}</td>
                           <td style={{ color: '#93C5FD' }}>{t.balancinAutoAvg.toFixed(1)}</td>
@@ -668,7 +677,7 @@ export default function RagnarokAnalyticsPage() {
                   })()}
                   <span>RANK <strong style={{ color: 'var(--accent-amber)' }}>#{selectedTeam.rank}</strong></span>
                   <span>PJ <strong>{selectedTeam.matchesPlayed}</strong></span>
-                  <span>EPA <strong style={{ color: 'var(--rag-crimson)' }}>{selectedTeam.epaNetAvg.toFixed(1)}</strong></span>
+                  <span>EPA <strong style={{ color: 'var(--bey-purple)' }}>{selectedTeam.epaNetAvg.toFixed(1)}</strong></span>
                   <span>RANGO <strong>{selectedTeam.minNet}–{selectedTeam.maxNet}</strong></span>
                   <span>OP <strong style={{ color: selectedTeam.reliabilityPct >= 90 ? 'var(--accent-emerald)' : 'var(--rag-coral)' }}>{selectedTeam.reliabilityPct.toFixed(0)}%</strong></span>
                   <span>PILOTO <strong style={{ color: 'var(--accent-amber)' }}>{selectedTeam.driverAvg.toFixed(1)}/5</strong></span>
@@ -725,7 +734,7 @@ export default function RagnarokAnalyticsPage() {
                         {[
                           { l: 'Auto [Min·Prom·Max]', v: `${selectedTeam.minAuto} · ${selectedTeam.autoAvg.toFixed(1)} · ${selectedTeam.maxAuto}`, c: '#FAFAFA' },
                           { l: 'Tele [Min·Prom·Max]', v: `${selectedTeam.minTele} · ${selectedTeam.teleAvg.toFixed(1)} · ${selectedTeam.maxTele}`, c: '#FAFAFA' },
-                          { l: 'Neto [Min·Prom·Max]', v: `${selectedTeam.minNet} · ${selectedTeam.epaNetAvg.toFixed(1)} · ${selectedTeam.maxNet}`, c: '#F59E0B' },
+                          { l: 'Neto [Min·Prom·Max]', v: `${selectedTeam.minNet} · ${selectedTeam.epaNetAvg.toFixed(1)} · ${selectedTeam.maxNet}`, c: '#FFD166' },
                         ].map((rng) => (
                           <div key={rng.l} style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '8px 10px' }}>
                             <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: 700 }}>{rng.l}</div>
@@ -736,9 +745,9 @@ export default function RagnarokAnalyticsPage() {
 
                       <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
                         {[
-                          { l: 'Auto Leave', v: `${selectedTeam.autoLeavePct.toFixed(0)}%`, c: '#A1A1AA' },
-                          { l: 'Auto Park', v: `${selectedTeam.autoParkPct.toFixed(0)}%`, c: '#A1A1AA' },
-                          { l: 'Endgame Park', v: `${selectedTeam.endgameParkPct.toFixed(0)}%`, c: '#F59E0B' },
+                          { l: 'Auto Leave', v: `${selectedTeam.autoLeavePct.toFixed(0)}%`, c: '#94A3B8' },
+                          { l: 'Auto Park', v: `${selectedTeam.autoParkPct.toFixed(0)}%`, c: '#94A3B8' },
+                          { l: 'Endgame Park', v: `${selectedTeam.endgameParkPct.toFixed(0)}%`, c: '#FFD166' },
                           { l: 'Control Flor', v: `${selectedTeam.flowerControlPct.toFixed(0)}% · ${selectedTeam.flowersOwnedAvg.toFixed(1)} fl.`, c: '#FB7185' },
                           { l: 'Bottom Nectar', v: `${selectedTeam.bottomNectarPct.toFixed(0)}%`, c: '#F87171' },
                           { l: 'Descore Garden', v: `${selectedTeam.gardenDescorePct.toFixed(0)}%`, c: '#34D399' },
@@ -773,7 +782,7 @@ export default function RagnarokAnalyticsPage() {
                               style={{
                                 background: 'var(--bg-carbon)',
                                 border: '1px solid var(--border-steel)',
-                                borderLeft: `3px solid ${n.status === '100% Operativo' ? 'var(--rag-crimson)' : 'var(--accent-amber)'}`,
+                                borderLeft: `3px solid ${n.status === '100% Operativo' ? 'var(--bey-indigo)' : 'var(--accent-amber)'}`,
                                 borderRadius: '4px',
                                 padding: '8px 10px',
                                 fontSize: '12px',
@@ -868,7 +877,7 @@ export default function RagnarokAnalyticsPage() {
                             <td>{m.foulsScore}</td>
                             <td style={{ color: 'var(--accent-cyan)' }}>{m.autoScore}</td>
                             <td style={{ color: 'var(--accent-amber)' }}>{m.teleScore}</td>
-                            <td style={{ fontWeight: 900, color: 'var(--rag-crimson)' }}>{m.netScore}</td>
+                            <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{m.netScore}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -945,7 +954,7 @@ export default function RagnarokAnalyticsPage() {
                 </div>
 
                 {redAllianceProj.hasCollision && (
-                  <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.14)', border: '1px solid var(--accent-amber)', fontSize: '11px', fontWeight: 700, color: 'var(--accent-amber)' }}>
+                  <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '4px', background: 'rgba(255, 209, 102, 0.14)', border: '1px solid var(--accent-amber)', fontSize: '11px', fontWeight: 700, color: 'var(--accent-amber)' }}>
                     Alerta Auto: ambos aliados arrancan en la misma zona ({redAllianceProj.startZones[0]}).
                   </div>
                 )}
@@ -980,7 +989,7 @@ export default function RagnarokAnalyticsPage() {
                 </div>
 
                 {blueAllianceProj.hasCollision && (
-                  <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.14)', border: '1px solid var(--accent-amber)', fontSize: '11px', fontWeight: 700, color: 'var(--accent-amber)' }}>
+                  <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '4px', background: 'rgba(255, 209, 102, 0.14)', border: '1px solid var(--accent-amber)', fontSize: '11px', fontWeight: 700, color: 'var(--accent-amber)' }}>
                     Alerta Auto: ambos aliados arrancan en la misma zona ({blueAllianceProj.startZones[0]}).
                   </div>
                 )}
@@ -1037,7 +1046,7 @@ export default function RagnarokAnalyticsPage() {
         {tab === 'alianza' && (
           <>
             {/* Verdict Banner */}
-            <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', borderLeft: `4px solid ${allianceDiff >= 0 ? 'var(--rag-crimson)' : 'var(--accent-cyan)'}` }}>
+            <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', borderLeft: `4px solid ${allianceDiff >= 0 ? 'var(--bey-purple)' : 'var(--accent-cyan)'}` }}>
               <div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase' }}>
                   Proyección Eliminatorias
@@ -1049,7 +1058,7 @@ export default function RagnarokAnalyticsPage() {
                 </div>
               </div>
               <div className="tabular" style={{ display: 'flex', gap: '16px', fontSize: '13px', fontWeight: 800 }}>
-                <span style={{ color: 'var(--rag-crimson)' }}>TU ALIANZA: {myAllianceProj.net.toFixed(1)}</span>
+                <span style={{ color: 'var(--bey-purple)' }}>TU ALIANZA: {myAllianceProj.net.toFixed(1)}</span>
                 <span style={{ color: 'var(--accent-cyan)' }}>RIVAL: {oppAllianceProj.net.toFixed(1)}</span>
               </div>
             </div>
@@ -1058,7 +1067,7 @@ export default function RagnarokAnalyticsPage() {
               {[
                 {
                   title: 'Tu Alianza (Playoffs)',
-                  color: 'var(--rag-crimson)',
+                  color: 'var(--bey-purple)',
                   slots: [
                     { label: 'Capitán', val: allyCap, set: setAllyCap },
                     { label: 'Pick 1', val: allyPick1, set: setAllyPick1 },
@@ -1091,7 +1100,7 @@ export default function RagnarokAnalyticsPage() {
                       marginBottom: '12px',
                       padding: '8px 10px',
                       borderRadius: '4px',
-                      background: side.proj.synergyOk ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                      background: side.proj.synergyOk ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 209, 102, 0.12)',
                       border: `1px solid ${side.proj.synergyOk ? 'var(--accent-emerald)' : 'var(--accent-amber)'}`,
                       fontSize: '11px',
                       fontWeight: 700,
@@ -1118,9 +1127,9 @@ export default function RagnarokAnalyticsPage() {
 
                   <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
                     {[
-                      { l: 'Auto', v: side.proj.auto.toFixed(1), c: '#FAFAFA' },
-                      { l: 'TeleOp', v: side.proj.tele.toFixed(1), c: '#FAFAFA' },
-                      { l: 'Faltas', v: side.proj.fouls.toFixed(1), c: '#F59E0B' },
+                      { l: 'Auto', v: side.proj.auto.toFixed(1), c: '#F8FAFC' },
+                      { l: 'TeleOp', v: side.proj.tele.toFixed(1), c: '#F8FAFC' },
+                      { l: 'Faltas', v: side.proj.fouls.toFixed(1), c: '#FFD166' },
                       { l: 'Balancín P+N', v: side.proj.balancin.toFixed(1), c: '#60A5FA' },
                       { l: 'Flower P+N', v: side.proj.flor.toFixed(1), c: '#FB7185' },
                       { l: 'Garden P+N', v: side.proj.garden.toFixed(1), c: '#34D399' },
@@ -1211,12 +1220,12 @@ function AllianceRobotsCards({
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>• {m.topStartPos}</span>
             </div>
             <div style={{ display: 'flex', gap: '10px', fontWeight: 700, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span style={{ color: '#D4D4D8' }}>A [{m.minAuto}·{m.autoAvg.toFixed(0)}·{m.maxAuto}]</span>
-              <span style={{ color: '#D4D4D8' }}>T [{m.minTele}·{m.teleAvg.toFixed(0)}·{m.maxTele}]</span>
+              <span style={{ color: '#E2E8F0' }}>A [{m.minAuto}·{m.autoAvg.toFixed(0)}·{m.maxAuto}]</span>
+              <span style={{ color: '#E2E8F0' }}>T [{m.minTele}·{m.teleAvg.toFixed(0)}·{m.maxTele}]</span>
               <span style={{ color: '#60A5FA' }}>Bal {(m.balancinAutoAvg + m.balancinTeleAvg).toFixed(1)}</span>
               <span style={{ color: '#FB7185' }}>Flor {m.florAvg.toFixed(1)}</span>
               <span style={{ color: '#34D399' }}>Gar {m.gardenAvg.toFixed(1)}</span>
-              <span style={{ color: m.reliabilityPct >= 90 ? '#34D399' : '#F59E0B' }}>
+              <span style={{ color: m.reliabilityPct >= 90 ? '#34D399' : '#FFD166' }}>
                 {m.reliabilityPct.toFixed(0)}% OP
               </span>
             </div>

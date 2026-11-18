@@ -1,25 +1,32 @@
 :root {
-  /* RAGNAROK PIT-WALL PALETTE (Rojo + Negro expandido para telemetría) */
-  --bg-obsidian: #09090B;
-  --bg-carbon: #111114;
-  --bg-graphite: #18181D;
-  --bg-elevated: #202027;
-  --border-steel: #27272E;
-  --border-steel-bright: #3A3A44;
+  /* THE BEYONDER — Paleta Cósmica Oficial + Expansión Semántica BIOBUZZ */
+  --bg-obsidian: #090A0F;     /* Vacío Absoluto */
+  --bg-carbon: #0E1018;
+  --bg-graphite: #131622;
+  --bg-elevated: #1A1E2E;
+  --border-steel: #23283D;
+  --border-steel-bright: #343B59;
 
-  /* Rojos Ragnarok */
+  /* Identidad THE BEYONDER */
+  --bey-purple: #A855F7;      /* Púrpura dimensional */
+  --bey-indigo: #6366F1;      /* Índigo cósmico */
+  --bey-cyan: #38BDF8;        /* Cian energético */
+  --bey-gold: #FFD166;        /* Dorado cósmico suave */
+  --bey-plum: rgba(99, 102, 241, 0.22);
+
+  /* Rojos Alianza Roja / Flower / Alertas */
   --rag-crimson: #E11D48;
   --rag-red: #DC2626;
   --rag-blood: #450A0A;
   --rag-coral: #FCA5A5;
 
-  /* Expansión semántica para gráficas, alianzas y BIOBUZZ */
-  --text-white: #FAFAFA;
-  --text-silver: #D4D4D8;
-  --text-muted: #A1A1AA;
-  --accent-amber: #F59E0B;
+  /* Textos & Semánticos BIOBUZZ */
+  --text-white: #F8FAFC;      /* Luz Trascendente (Blanco estelar puro) */
+  --text-silver: #E2E8F0;     /* Plata pálido */
+  --text-muted: #94A3B8;
+  --accent-amber: #FFD166;
   --accent-purple: #A855F7;
-  --accent-cyan: #06B6D4;
+  --accent-cyan: #38BDF8;
   --accent-blue: #3B82F6;
   --accent-emerald: #10B981;
 }
@@ -57,8 +64,10 @@ body {
   position: sticky;
   top: 0;
   z-index: 60;
-  background: var(--bg-carbon);
-  border-bottom: 2px solid var(--rag-red);
+  background: rgba(14, 16, 24, 0.94);
+  backdrop-filter: blur(10px);
+  border-bottom: 2px solid var(--bey-indigo);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.14);
 }
 
 .topbar-inner {
@@ -119,9 +128,10 @@ body {
 }
 
 .nav-tab.active {
-  background: var(--rag-blood);
-  border-color: var(--rag-crimson);
+  background: var(--bey-plum);
+  border-color: var(--bey-purple);
   color: var(--text-white);
+  box-shadow: inset 0 0 12px rgba(168, 85, 247, 0.16);
 }
 
 .main-container {
@@ -169,7 +179,7 @@ body {
 .kpi-card {
   background: var(--bg-graphite);
   border: 1px solid var(--border-steel);
-  border-top: 2px solid var(--rag-red);
+  border-top: 2px solid var(--bey-indigo);
   border-radius: 6px;
   padding: 14px 16px;
   display: flex;
@@ -198,9 +208,9 @@ body {
 }
 
 .btn-rag {
-  background: var(--rag-crimson);
-  border: 1px solid var(--rag-crimson);
-  color: #FFFFFF;
+  background: linear-gradient(135deg, var(--bey-purple), var(--bey-indigo));
+  border: 1px solid var(--bey-purple);
+  color: var(--text-white);
   border-radius: 4px;
   padding: 8px 14px;
   font-size: 12px;
@@ -209,11 +219,12 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: background 0.15s ease;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
 }
 
 .btn-rag:hover {
-  background: #BE123C;
+  filter: brightness(1.08);
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.35);
 }
 
 .btn-rag:disabled {
@@ -236,14 +247,14 @@ body {
 }
 
 .btn-ghost:hover {
-  border-color: var(--rag-crimson);
+  border-color: var(--bey-purple);
   color: var(--text-white);
 }
 
 .btn-ghost.active {
-  background: var(--rag-blood);
-  border-color: var(--rag-crimson);
-  color: var(--rag-coral);
+  background: rgba(168, 85, 247, 0.18);
+  border-color: var(--bey-purple);
+  color: var(--bey-cyan);
 }
 
 .input-rag,
@@ -261,7 +272,7 @@ body {
 
 .input-rag:focus,
 .select-rag:focus {
-  border-color: var(--rag-crimson);
+  border-color: var(--bey-purple);
 }
 
 /* Tabla Maestra / Picklist */
@@ -292,7 +303,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 11px 10px;
-  border-bottom: 2px solid var(--rag-red);
+  border-bottom: 2px solid var(--bey-indigo);
   cursor: pointer;
   user-select: none;
 }
@@ -316,7 +327,7 @@ body {
 }
 
 .rag-table tbody tr:hover {
-  background: rgba(225, 29, 72, 0.09);
+  background: rgba(99, 102, 241, 0.1);
 }
 
 .rag-table tbody td {
