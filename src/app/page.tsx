@@ -72,13 +72,18 @@ export default function RagnarokAnalyticsPage() {
   const [opp2, setOpp2] = useState<number>(0);
   const [oppSub, setOppSub] = useState<number>(0);
 
-  // Optional FTCScout event loader
+  // Optional FTCScout / Timestone dynamic event selector
   const [eventCodeInput, setEventCodeInput] = useState('');
   const [eventSeason, setEventSeason] = useState(2026);
   const [loadedEvent, setLoadedEvent] = useState<{ code: string; name: string; season: number } | null>(null);
   const [scheduleMatches, setScheduleMatches] = useState<ScheduleMatch[]>([]);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
+  const [showEventPicker, setShowEventPicker] = useState(false);
+  const [searchingEvents, setSearchingEvents] = useState(false);
+  const [eventSearchResults, setEventSearchResults] = useState<
+    { code: string; name: string; regionCode?: string; start?: string }[]
+  >([]);
 
   // Timestone refresh & staleness (>1h) control
   const [timestoneRefreshing, setTimestoneRefreshing] = useState(false);
@@ -136,8 +141,17 @@ export default function RagnarokAnalyticsPage() {
         eventOverride ||
         loadedEventRef.current ||
         payload?.timestone?.eventCode ||
-        'MXTO'
-      ).toUpperCase();
+        ''
+      )
+        .trim()
+        .toUpperCase();
+
+      if (!targetEvent) {
+        setShowEventPicker(true);
+        setTimestoneStatusMsg('Elige o busca un evento antes de ejecutar Timestone.');
+        return;
+      }
+
       const prevUpdatedAt = payload?.timestone?.updatedAt ?? null;
 
       setTimestoneRefreshing(true);
@@ -275,23 +289,36 @@ export default function RagnarokAnalyticsPage() {
     if (b2) setBlue2(b2);
   }, [scheduleMatches, matchNum]);
 
-  const handleLoadEvent = async () => {
-    const code = eventCodeInput.trim().toUpperCase();
+  const activateEvent = async (rawCode: string) => {
+    const code = rawCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
     if (!code) return;
     setLoadingEvent(true);
     setEventError(null);
     try {
       const res = await fetch(`/api/event?season=${eventSeason}&code=${encodeURIComponent(code)}`);
       const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || 'Evento no encontrado');
-      setLoadedEvent(json.event);
-      loadedEventRef.current = json.event.code;
-      setScheduleMatches(json.matches || []);
-      localStorage.setItem(EVENT_STORAGE_KEY, JSON.stringify({ event: json.event, matches: json.matches || [] }));
 
-      const fresh = await fetchAnalytics(json.event.code);
+      let nextEvent = { code, name: code, season: eventSeason };
+      let nextMatches: ScheduleMatch[] = [];
+
+      if (res.ok && json.success && json.event) {
+        nextEvent = json.event;
+        nextMatches = json.matches || [];
+      } else {
+        // Código personalizado local (no registrado en FTCScout): permitir activarlo para Timestone/Sheets
+        setEventError(`'${code}' no se encontró en FTCScout ${eventSeason}; activado usando pestañas locales de Google Sheets.`);
+      }
+
+      setLoadedEvent(nextEvent);
+      loadedEventRef.current = nextEvent.code;
+      setScheduleMatches(nextMatches);
+      setEventCodeInput(nextEvent.code);
+      setShowEventPicker(false);
+      localStorage.setItem(EVENT_STORAGE_KEY, JSON.stringify({ event: nextEvent, matches: nextMatches }));
+
+      const fresh = await fetchAnalytics(nextEvent.code);
       const ts = fresh?.timestone;
-      if (ts && ts.isStale && !autoTriggeredEventsRef.current.has(ts.eventCode)) {
+      if (ts && ts.eventCode && ts.isStale && !autoTriggeredEventsRef.current.has(ts.eventCode)) {
         autoTriggeredEventsRef.current.add(ts.eventCode);
         triggerTimestoneRefresh(ts.eventCode, true);
       }
@@ -299,6 +326,26 @@ export default function RagnarokAnalyticsPage() {
       setEventError(err.message);
     } finally {
       setLoadingEvent(false);
+    }
+  };
+
+  const handleLoadEvent = () => activateEvent(eventCodeInput);
+
+  const handleSearchEvents = async () => {
+    setSearchingEvents(true);
+    setEventError(null);
+    try {
+      const q = eventCodeInput.trim();
+      const res = await fetch(
+        `/api/event?action=search&season=${eventSeason}&q=${encodeURIComponent(q)}`
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || 'Error buscando eventos');
+      setEventSearchResults(json.events || []);
+    } catch (err: any) {
+      setEventError(err.message);
+    } finally {
+      setSearchingEvents(false);
     }
   };
 
@@ -388,6 +435,14 @@ export default function RagnarokAnalyticsPage() {
   const blueAllianceProj = aggregateAlliance([blue1, blue2]);
 
   const timestoneData = payload?.timestone;
+  const activeEventCode = loadedEvent?.code || timestoneData?.eventCode || '';
+  const availableEventOptions = useMemo(() => {
+    const set = new Set<string>(timestoneData?.availableEvents || []);
+    if (loadedEvent?.code) set.add(loadedEvent.code);
+    if (timestoneData?.eventCode) set.add(timestoneData.eventCode);
+    return Array.from(set).filter(Boolean).sort();
+  }, [timestoneData?.availableEvents, timestoneData?.eventCode, loadedEvent?.code]);
+
   const timestoneMatch = useMemo(() => {
     const list = timestoneData?.matches || [];
     if (!list.length) return null;
@@ -484,6 +539,40 @@ export default function RagnarokAnalyticsPage() {
           </nav>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <select
+              aria-label="Evento activo"
+              value={activeEventCode || '__NEW__'}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '__NEW__') {
+                  setShowEventPicker(true);
+                } else {
+                  activateEvent(val);
+                }
+              }}
+              className="select-rag tabular"
+              style={{ maxWidth: '165px' }}
+            >
+              {availableEventOptions.length === 0 && (
+                <option value="__NEW__">Seleccionar evento...</option>
+              )}
+              {availableEventOptions.map((ev) => (
+                <option key={ev} value={ev}>
+                  Evento: {ev}
+                </option>
+              ))}
+              <option value="__NEW__">+ Buscar / Otro...</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => setShowEventPicker((prev) => !prev)}
+              className={`btn-ghost ${showEventPicker ? 'active' : ''}`}
+              title="Buscar evento en FTCScout o ingresar código personalizado"
+            >
+              {showEventPicker ? 'Cerrar' : 'Cambiar'}
+            </button>
+
             <button
               type="button"
               onClick={() => triggerTimestoneRefresh(undefined, false)}
@@ -491,7 +580,7 @@ export default function RagnarokAnalyticsPage() {
               className="btn-ghost"
               title={
                 timestoneData?.updatedAt
-                  ? `Último Timestone (${timestoneData.eventCode}): ${new Date(timestoneData.updatedAt).toLocaleString('es-MX')}`
+                  ? `Último Timestone (${activeEventCode || 'Sin evento'}): ${new Date(timestoneData.updatedAt).toLocaleString('es-MX')}`
                   : 'Ejecutar simulación Timestone (Monte Carlo + FTCScout)'
               }
             >
@@ -510,9 +599,9 @@ export default function RagnarokAnalyticsPage() {
               />
               {timestoneRefreshing
                 ? 'Simulando...'
-                : timestoneData?.available
-                  ? `Timestone (${timestoneData.eventCode})${timestoneData.ageMinutes !== null ? ` • ${timestoneData.ageMinutes}m` : ''}`
-                  : 'Refrescar Timestone'}
+                : activeEventCode
+                  ? `Timestone (${activeEventCode})${timestoneData?.ageMinutes !== null && timestoneData?.ageMinutes !== undefined ? ` • ${timestoneData.ageMinutes}m` : ''}`
+                  : 'Timestone'}
             </button>
 
             <button type="button" onClick={() => fetchAnalytics()} disabled={loading} className="btn-rag">
@@ -527,6 +616,90 @@ export default function RagnarokAnalyticsPage() {
       </header>
 
       <main className="main-container">
+        {showEventPicker && (
+          <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderColor: 'var(--bey-purple)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <span className="panel-title">Selector Dinámico de Evento (FTCScout + Google Sheets)</span>
+              {loadedEvent && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoadedEvent(null);
+                    loadedEventRef.current = undefined;
+                    setScheduleMatches([]);
+                    setEventCodeInput('');
+                    localStorage.removeItem(EVENT_STORAGE_KEY);
+                    fetchAnalytics();
+                  }}
+                  className="btn-ghost"
+                  style={{ padding: '4px 9px', fontSize: '11px' }}
+                >
+                  Restablecer ({loadedEvent.code})
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <select value={eventSeason} onChange={(e) => setEventSeason(Number(e.target.value))} className="select-rag tabular">
+                <option value={2026}>2026</option>
+                <option value={2025}>2025</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Buscar nombre o código (ej. MXTO, Monterrey, MXCMP...)"
+                value={eventCodeInput}
+                onChange={(e) => setEventCodeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSearchEvents();
+                }}
+                className="input-rag"
+                style={{ flex: 1, minWidth: '220px' }}
+              />
+              <button type="button" onClick={handleSearchEvents} disabled={searchingEvents} className="btn-ghost">
+                {searchingEvents ? 'Buscando...' : 'Buscar FTCScout'}
+              </button>
+              <button type="button" onClick={handleLoadEvent} disabled={loadingEvent || !eventCodeInput.trim()} className="btn-rag">
+                {loadingEvent ? 'Cargando...' : 'Activar Código'}
+              </button>
+            </div>
+
+            {availableEventOptions.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', fontSize: '11px' }}>
+                <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>En Sheets:</span>
+                {availableEventOptions.map((ev) => (
+                  <button
+                    key={ev}
+                    type="button"
+                    onClick={() => activateEvent(ev)}
+                    className={`btn-ghost ${activeEventCode === ev ? 'active' : ''}`}
+                    style={{ padding: '4px 10px', fontSize: '11px' }}
+                  >
+                    {ev}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {eventSearchResults.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '140px', overflowY: 'auto' }}>
+                {eventSearchResults.map((ev) => (
+                  <button
+                    key={ev.code}
+                    type="button"
+                    onClick={() => activateEvent(ev.code)}
+                    className="btn-ghost"
+                    style={{ padding: '5px 10px', fontSize: '11px', textAlign: 'left' }}
+                  >
+                    <strong style={{ color: 'var(--bey-cyan)' }}>{ev.code}</strong> · {ev.name}
+                    {ev.regionCode ? ` (${ev.regionCode})` : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {eventError && <div style={{ fontSize: '11px', color: 'var(--accent-amber)', fontWeight: 700 }}>{eventError}</div>}
+          </div>
+        )}
         {timestoneStatusMsg && (
           <div
             style={{
@@ -1413,11 +1586,13 @@ export default function RagnarokAnalyticsPage() {
             <section className="kpi-grid">
               <div className="kpi-card">
                 <span className="kpi-label">Evento Timestone</span>
-                <span className="kpi-value tabular">{timestoneData?.eventCode || 'MXTO'}</span>
+                <span className="kpi-value tabular">{activeEventCode || 'Sin elegir'}</span>
                 <span className="kpi-sub">
                   {timestoneData?.updatedAt
                     ? `Actualizado ${new Date(timestoneData.updatedAt).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-                    : 'Sin ejecución previa registrada'}
+                    : activeEventCode
+                      ? 'Sin ejecución previa para este evento'
+                      : 'Selecciona un evento en la barra superior'}
                 </span>
               </div>
               <div className="kpi-card">
@@ -1450,19 +1625,34 @@ export default function RagnarokAnalyticsPage() {
             {!timestoneData?.standings.length ? (
               <div className="panel" style={{ padding: '28px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
                 <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-silver)' }}>
-                  Todavía no hay datos en Standings_Proy_{timestoneData?.eventCode || 'MXTO'}.
+                  {activeEventCode
+                    ? `Todavía no hay datos en Standings_Proy_${activeEventCode}.`
+                    : 'Selecciona o busca un evento para generar o ver Standings Proyectados.'}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '520px' }}>
-                  Ejecuta Timestone desde Colab, en local o pulsando el botón inferior (requiere GitHub Actions configurado en Vercel).
+                  {activeEventCode
+                    ? 'Ejecuta Timestone desde Colab, en local o pulsando el botón inferior.'
+                    : 'Usa el selector de evento en la barra superior (o busca en FTCScout) para activar un evento.'}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => triggerTimestoneRefresh(undefined, false)}
-                  disabled={timestoneRefreshing}
-                  className="btn-rag"
-                >
-                  {timestoneRefreshing ? 'Ejecutando Timestone...' : 'Generar Standings con Timestone'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowEventPicker(true)}
+                    className="btn-ghost"
+                  >
+                    Seleccionar / Buscar Evento
+                  </button>
+                  {activeEventCode && (
+                    <button
+                      type="button"
+                      onClick={() => triggerTimestoneRefresh(activeEventCode, false)}
+                      disabled={timestoneRefreshing}
+                      className="btn-rag"
+                    >
+                      {timestoneRefreshing ? 'Ejecutando Timestone...' : `Generar Standings (${activeEventCode})`}
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="table-wrap" style={{ maxHeight: '66vh', overflowY: 'auto' }}>

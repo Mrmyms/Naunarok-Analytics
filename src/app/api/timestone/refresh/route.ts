@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 const recentDispatches = new Map<string, number>();
 const COOLDOWN_MS = 90_000;
 
-function sanitizeEventCode(raw: unknown, fallback = 'MXTO'): string {
+function sanitizeEventCode(raw: unknown, fallback = ''): string {
   const cleaned = String(raw ?? '')
     .trim()
     .toUpperCase()
@@ -27,8 +27,17 @@ export async function POST(request: Request) {
       // Allow empty POST body
     }
 
-    const defaultEvent = sanitizeEventCode(process.env.TIMESTONE_EVENT, 'MXTO');
-    const eventCode = sanitizeEventCode(body.eventCode, defaultEvent);
+    const envEvent = sanitizeEventCode(process.env.TIMESTONE_EVENT, '');
+    const eventCode = sanitizeEventCode(body.eventCode, envEvent);
+    if (!eventCode) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Selecciona o escribe un código de evento válido antes de ejecutar Timestone.',
+        },
+        { status: 400 }
+      );
+    }
     const ftcscoutCode = body.ftcscoutCode ? sanitizeEventCode(body.ftcscoutCode, '') : '';
     const season = Number.isFinite(Number(body.season)) ? Math.max(2020, Math.min(2035, Math.round(Number(body.season)))) : 2026;
     const force = Boolean(body.force);

@@ -100,6 +100,7 @@ export interface TimestoneStandingRow {
 export interface TimestonePayload {
   available: boolean;
   eventCode: string;
+  availableEvents: string[];
   updatedAt: string | null;
   isStale: boolean;
   ageMinutes: number | null;

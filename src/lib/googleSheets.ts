@@ -62,6 +62,7 @@ export async function fetchAnalyticsSheets() {
 
 export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
   eventCode: string;
+  availableEvents: string[];
   rankingRows: unknown[][];
   simMatchRows: unknown[][];
   standingsRows: unknown[][];
@@ -81,19 +82,31 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
     .map((s) => s.properties?.title || '')
     .filter(Boolean);
 
+  const tabPrefixes = ['Ranking_EPA_', 'Simulacion_Matches_', 'Standings_Proy_'];
+  const availableEvents = Array.from(
+    new Set(
+      titles.flatMap((t) => {
+        const prefix = tabPrefixes.find((p) => t.startsWith(p));
+        return prefix ? [t.slice(prefix.length)] : [];
+      })
+    )
+  )
+    .filter(Boolean)
+    .sort();
+
   const requestedClean = (requestedEvent || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   const envEvent = (process.env.TIMESTONE_EVENT || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
 
-  let resolvedEvent = requestedClean || envEvent || 'MXTO';
-  if (requestedClean && titles.includes(`Ranking_EPA_${requestedClean}`)) {
-    resolvedEvent = requestedClean;
-  } else if (envEvent && titles.includes(`Ranking_EPA_${envEvent}`)) {
-    resolvedEvent = envEvent;
-  } else if (!titles.includes(`Ranking_EPA_${resolvedEvent}`)) {
-    const firstRankingTab = titles.find((t) => t.startsWith('Ranking_EPA_'));
-    if (firstRankingTab) {
-      resolvedEvent = firstRankingTab.slice('Ranking_EPA_'.length);
-    }
+  const resolvedEvent = requestedClean || envEvent || availableEvents[0] || '';
+
+  if (!resolvedEvent) {
+    return {
+      eventCode: '',
+      availableEvents,
+      rankingRows: [],
+      simMatchRows: [],
+      standingsRows: [],
+    };
   }
 
   const rankingTab = `Ranking_EPA_${resolvedEvent}`;
@@ -108,6 +121,7 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
   if (rangesToFetch.length === 0) {
     return {
       eventCode: resolvedEvent,
+      availableEvents,
       rankingRows: [],
       simMatchRows: [],
       standingsRows: [],
@@ -134,6 +148,7 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
 
   return {
     eventCode: resolvedEvent,
+    availableEvents,
     rankingRows,
     simMatchRows,
     standingsRows,

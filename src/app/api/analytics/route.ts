@@ -94,6 +94,7 @@ function buildHeaderIndex(headerRow: unknown[] | undefined): Record<string, numb
 
 function parseTimestonePayload(raw: {
   eventCode: string;
+  availableEvents: string[];
   rankingRows: unknown[][];
   simMatchRows: unknown[][];
   standingsRows: unknown[][];
@@ -204,11 +205,12 @@ function parseTimestonePayload(raw: {
   const available = teams.length > 0 || matches.length > 0 || standings.length > 0;
   const ageMinutes =
     updatedAt !== null ? Math.max(0, Math.round((Date.now() - Date.parse(updatedAt)) / 60000)) : null;
-  const isStale = !available || ageMinutes === null || ageMinutes >= 60;
+  const isStale = Boolean(raw.eventCode) && (!available || ageMinutes === null || ageMinutes >= 60);
 
   return {
     available,
     eventCode: raw.eventCode,
+    availableEvents: raw.availableEvents,
     updatedAt,
     isStale,
     ageMinutes,
@@ -228,7 +230,8 @@ export async function GET(request: Request) {
       fetchTimestoneSheets(requestedEvent).catch((err) => {
         console.warn('No se pudieron cargar pestañas de Timestone:', err);
         return {
-          eventCode: requestedEvent || 'MXTO',
+          eventCode: requestedEvent || '',
+          availableEvents: [],
           rankingRows: [],
           simMatchRows: [],
           standingsRows: [],
