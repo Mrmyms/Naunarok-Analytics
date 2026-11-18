@@ -34,6 +34,80 @@ export interface MatchRecord {
   netScore: number;
 }
 
+export interface TimestoneTeamMetric {
+  rankEpa: number;
+  team: number;
+  name: string;
+  matches: number;
+  epa: number;
+  epaOperational: number;
+  scoreEst: number;
+  autoEst: number;
+  teleEst: number;
+  endEst: number;
+  foulsEst: number;
+  tipsEst: number;
+  canTopNectar: boolean;
+  floresTop: number;
+  piezasFlor: number;
+  reliabilityPct: number;
+  excludedOldFailures: number;
+  posEstimada: string;
+}
+
+export interface TimestoneMatchSim {
+  evento: string;
+  nivel: string;
+  match: number;
+  jugado: boolean;
+  red1: number;
+  red2: number;
+  blue1: number;
+  blue2: number;
+  redEst: number;
+  blueEst: number;
+  redWinPct: number;
+  blueWinPct: number;
+  tiePct: number;
+  ganadorEst: string;
+  redFloresTap: number;
+  blueFloresTap: number;
+  redAutoConflict: boolean;
+  blueAutoConflict: boolean;
+  redRpsEst: number;
+  blueRpsEst: number;
+  redReal: number | null;
+  blueReal: number | null;
+}
+
+export interface TimestoneStandingRow {
+  rankProyectado: number;
+  team: number;
+  name: string;
+  pjJugados: number;
+  pjRestantes: number;
+  pjSim: number;
+  rpsReales: number;
+  rpsTotales: number;
+  rpPromedio: number;
+  scoreAcumulado: number;
+  scorePromedio: number;
+  rankMin: number;
+  rankMax: number;
+  probTop4Pct: number;
+}
+
+export interface TimestonePayload {
+  available: boolean;
+  eventCode: string;
+  updatedAt: string | null;
+  isStale: boolean;
+  ageMinutes: number | null;
+  teams: TimestoneTeamMetric[];
+  matches: TimestoneMatchSim[];
+  standings: TimestoneStandingRow[];
+}
+
 export interface TeamAnalytics {
   rank: number;
   team: number;
@@ -76,6 +150,7 @@ export interface TeamAnalytics {
   sidePositions?: Record<string, { count: number; pct: number }>;
   notes: { match: number; scouter: string; alliance: string; note: string; status: string }[];
   history: MatchRecord[];
+  timestone?: TimestoneTeamMetric;
 }
 
 export interface AnalyticsPayload {
@@ -85,6 +160,7 @@ export interface AnalyticsPayload {
   teamsCount: number;
   teams: TeamAnalytics[];
   matches: MatchRecord[];
+  timestone?: TimestonePayload;
   error?: string;
 }
 

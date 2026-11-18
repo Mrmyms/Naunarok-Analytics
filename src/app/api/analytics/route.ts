@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
-import { fetchAnalyticsSheets } from '@/lib/googleSheets';
-import type { MatchRecord, TeamAnalytics } from '@/lib/types';
+import { fetchAnalyticsSheets, fetchTimestoneSheets } from '@/lib/googleSheets';
+import type {
+  MatchRecord,
+  TeamAnalytics,
+  TimestoneMatchSim,
+  TimestonePayload,
+  TimestoneStandingRow,
+  TimestoneTeamMetric,
+} from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,9 +70,176 @@ function formatSerialDate(v: unknown): string {
   return String(v ?? '');
 }
 
-export async function GET() {
+function parseUpdatedAtIso(v: unknown): string | null {
+  if (typeof v === 'number' && v > 25000) {
+    const ms = (v - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  const parsed = Date.parse(s);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+}
+
+function buildHeaderIndex(headerRow: unknown[] | undefined): Record<string, number> {
+  const map: Record<string, number> = {};
+  if (!headerRow) return map;
+  headerRow.forEach((cell, idx) => {
+    const key = String(cell ?? '').trim();
+    if (key) map[key] = idx;
+  });
+  return map;
+}
+
+function parseTimestonePayload(raw: {
+  eventCode: string;
+  rankingRows: unknown[][];
+  simMatchRows: unknown[][];
+  standingsRows: unknown[][];
+}): TimestonePayload {
+  const rankHdr = buildHeaderIndex(raw.rankingRows[0]);
+  const matchHdr = buildHeaderIndex(raw.simMatchRows[0]);
+  const standHdr = buildHeaderIndex(raw.standingsRows[0]);
+
+  const cell = (row: unknown[], hdr: Record<string, number>, col: string): unknown => {
+    const idx = hdr[col];
+    return idx === undefined ? undefined : row[idx];
+  };
+
+  let updatedAt: string | null = null;
+
+  const teams: TimestoneTeamMetric[] = raw.rankingRows
+    .slice(1)
+    .map((r): TimestoneTeamMetric | null => {
+      const team = toNum(cell(r, rankHdr, 'Team ID'), 0);
+      if (!team) return null;
+      if (!updatedAt) {
+        updatedAt = parseUpdatedAtIso(cell(r, rankHdr, 'Updated_At'));
+      }
+      return {
+        rankEpa: toNum(cell(r, rankHdr, 'Rank_EPA'), 0),
+        team,
+        name: String(cell(r, rankHdr, 'Nombre') ?? `Equipo ${team}`),
+        matches: toNum(cell(r, rankHdr, 'Matches'), 0),
+        epa: toNum(cell(r, rankHdr, 'EPA'), 0),
+        epaOperational: toNum(cell(r, rankHdr, 'EPA_Operativo'), toNum(cell(r, rankHdr, 'EPA'), 0)),
+        scoreEst: toNum(cell(r, rankHdr, 'Score Est'), 0),
+        autoEst: toNum(cell(r, rankHdr, 'Auto Est'), 0),
+        teleEst: toNum(cell(r, rankHdr, 'Tele Est'), 0),
+        endEst: toNum(cell(r, rankHdr, 'End Est'), 0),
+        foulsEst: toNum(cell(r, rankHdr, 'Faltas Est'), 0),
+        tipsEst: toNum(cell(r, rankHdr, 'Tips Est'), 0),
+        canTopNectar: toBool(cell(r, rankHdr, 'Top Nectar')),
+        floresTop: toNum(cell(r, rankHdr, 'Flores TOP'), 0),
+        piezasFlor: toNum(cell(r, rankHdr, 'Piezas Flor'), 0),
+        reliabilityPct: toNum(cell(r, rankHdr, 'Confiabilidad %'), 100),
+        excludedOldFailures: toNum(cell(r, rankHdr, 'Fallas_Excluidas'), 0),
+        posEstimada: String(cell(r, rankHdr, 'Pos Estimada') ?? 'NONE'),
+      };
+    })
+    .filter((t): t is TimestoneTeamMetric => t !== null);
+
+  const matches: TimestoneMatchSim[] = raw.simMatchRows
+    .slice(1)
+    .map((r): TimestoneMatchSim | null => {
+      const match = toNum(cell(r, matchHdr, 'Match'), 0);
+      if (!match) return null;
+      const redRealRaw = cell(r, matchHdr, 'Red Real');
+      const blueRealRaw = cell(r, matchHdr, 'Blue Real');
+      return {
+        evento: String(cell(r, matchHdr, 'EVENTO') ?? raw.eventCode),
+        nivel: String(cell(r, matchHdr, 'Nivel') ?? 'Quals'),
+        match,
+        jugado: toBool(cell(r, matchHdr, 'Jugado')),
+        red1: toNum(cell(r, matchHdr, 'RED1'), 0),
+        red2: toNum(cell(r, matchHdr, 'RED2'), 0),
+        blue1: toNum(cell(r, matchHdr, 'BLUE1'), 0),
+        blue2: toNum(cell(r, matchHdr, 'BLUE2'), 0),
+        redEst: toNum(cell(r, matchHdr, 'Red Est'), 0),
+        blueEst: toNum(cell(r, matchHdr, 'Blue Est'), 0),
+        redWinPct: toNum(cell(r, matchHdr, 'Red Win %'), 50),
+        blueWinPct: toNum(cell(r, matchHdr, 'Blue Win %'), 50),
+        tiePct: toNum(cell(r, matchHdr, 'Tie %'), 0),
+        ganadorEst: String(cell(r, matchHdr, 'Ganador Est') ?? 'EMPATE'),
+        redFloresTap: toNum(cell(r, matchHdr, 'Red Flores Tap.'), 0),
+        blueFloresTap: toNum(cell(r, matchHdr, 'Blue Flores Tap.'), 0),
+        redAutoConflict: toBool(cell(r, matchHdr, 'Red Conflicto Auto')),
+        blueAutoConflict: toBool(cell(r, matchHdr, 'Blue Conflicto Auto')),
+        redRpsEst: toNum(cell(r, matchHdr, 'Red RPs Est'), 0),
+        blueRpsEst: toNum(cell(r, matchHdr, 'Blue RPs Est'), 0),
+        redReal: redRealRaw === '' || redRealRaw === undefined ? null : toNum(redRealRaw, 0),
+        blueReal: blueRealRaw === '' || blueRealRaw === undefined ? null : toNum(blueRealRaw, 0),
+      };
+    })
+    .filter((m): m is TimestoneMatchSim => m !== null);
+
+  const standings: TimestoneStandingRow[] = raw.standingsRows
+    .slice(1)
+    .map((r): TimestoneStandingRow | null => {
+      const team = toNum(cell(r, standHdr, 'Team ID'), 0);
+      if (!team) return null;
+      if (!updatedAt) {
+        updatedAt = parseUpdatedAtIso(cell(r, standHdr, 'Updated_At'));
+      }
+      return {
+        rankProyectado: toNum(cell(r, standHdr, 'Rank_Proyectado'), 0),
+        team,
+        name: String(cell(r, standHdr, 'Nombre') ?? `Equipo ${team}`),
+        pjJugados: toNum(cell(r, standHdr, 'PJ_Jugados'), 0),
+        pjRestantes: toNum(cell(r, standHdr, 'PJ_Restantes'), 0),
+        pjSim: toNum(cell(r, standHdr, 'PJ_Sim'), 0),
+        rpsReales: toNum(cell(r, standHdr, 'RPs_Reales'), 0),
+        rpsTotales: toNum(cell(r, standHdr, 'RPs_Totales'), 0),
+        rpPromedio: toNum(cell(r, standHdr, 'RP_Promedio'), 0),
+        scoreAcumulado: toNum(cell(r, standHdr, 'Score_Acumulado'), 0),
+        scorePromedio: toNum(cell(r, standHdr, 'Score_Promedio'), 0),
+        rankMin: toNum(cell(r, standHdr, 'Rank_Min'), 0),
+        rankMax: toNum(cell(r, standHdr, 'Rank_Max'), 0),
+        probTop4Pct: toNum(cell(r, standHdr, 'Prob_Top4_Pct'), 0),
+      };
+    })
+    .filter((s): s is TimestoneStandingRow => s !== null);
+
+  const available = teams.length > 0 || matches.length > 0 || standings.length > 0;
+  const ageMinutes =
+    updatedAt !== null ? Math.max(0, Math.round((Date.now() - Date.parse(updatedAt)) / 60000)) : null;
+  const isStale = !available || ageMinutes === null || ageMinutes >= 60;
+
+  return {
+    available,
+    eventCode: raw.eventCode,
+    updatedAt,
+    isStale,
+    ageMinutes,
+    teams,
+    matches,
+    standings,
+  };
+}
+
+export async function GET(request: Request) {
   try {
-    const { resumenRows, capturaRows } = await fetchAnalyticsSheets();
+    const { searchParams } = new URL(request.url);
+    const requestedEvent = searchParams.get('event')?.trim().toUpperCase() || undefined;
+
+    const [{ resumenRows, capturaRows }, rawTimestone] = await Promise.all([
+      fetchAnalyticsSheets(),
+      fetchTimestoneSheets(requestedEvent).catch((err) => {
+        console.warn('No se pudieron cargar pestañas de Timestone:', err);
+        return {
+          eventCode: requestedEvent || 'MXTO',
+          rankingRows: [],
+          simMatchRows: [],
+          standingsRows: [],
+        };
+      }),
+    ]);
+
+    const timestone = parseTimestonePayload(rawTimestone);
+    const timestoneTeamMap = new Map<number, TimestoneTeamMetric>(
+      timestone.teams.map((t) => [t.team, t])
+    );
 
     // 1. Parse Captura_BIOBUZZ rows (row 0 = headers A1:AE1)
     const rawCapturas = capturaRows.slice(1);
@@ -261,6 +435,7 @@ export async function GET() {
           }))
           .reverse(),
         history: teamMatches,
+        timestone: timestoneTeamMap.get(teamNum),
       };
     };
 
@@ -293,6 +468,7 @@ export async function GET() {
       teamsCount: teams.length,
       teams,
       matches,
+      timestone,
     });
   } catch (error: any) {
     console.error('Error en /api/analytics:', error);

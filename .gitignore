@@ -25,3 +25,9 @@ dist/
 *.swo
 .vercel
 .env*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

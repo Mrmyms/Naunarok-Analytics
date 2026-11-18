@@ -59,3 +59,83 @@ export async function fetchAnalyticsSheets() {
     capturaRows: valueRanges[1]?.values || [],
   };
 }
+
+export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
+  eventCode: string;
+  rankingRows: unknown[][];
+  simMatchRows: unknown[][];
+  standingsRows: unknown[][];
+}> {
+  const creds = getCredentials();
+  const auth = new google.auth.GoogleAuth({
+    credentials: creds,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  });
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: 'sheets.properties.title',
+  });
+  const titles = (meta.data.sheets || [])
+    .map((s) => s.properties?.title || '')
+    .filter(Boolean);
+
+  const requestedClean = (requestedEvent || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  const envEvent = (process.env.TIMESTONE_EVENT || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+
+  let resolvedEvent = requestedClean || envEvent || 'MXTO';
+  if (requestedClean && titles.includes(`Ranking_EPA_${requestedClean}`)) {
+    resolvedEvent = requestedClean;
+  } else if (envEvent && titles.includes(`Ranking_EPA_${envEvent}`)) {
+    resolvedEvent = envEvent;
+  } else if (!titles.includes(`Ranking_EPA_${resolvedEvent}`)) {
+    const firstRankingTab = titles.find((t) => t.startsWith('Ranking_EPA_'));
+    if (firstRankingTab) {
+      resolvedEvent = firstRankingTab.slice('Ranking_EPA_'.length);
+    }
+  }
+
+  const rankingTab = `Ranking_EPA_${resolvedEvent}`;
+  const matchesTab = `Simulacion_Matches_${resolvedEvent}`;
+  const standingsTab = `Standings_Proy_${resolvedEvent}`;
+
+  const rangesToFetch: { key: 'ranking' | 'matches' | 'standings'; range: string }[] = [];
+  if (titles.includes(rankingTab)) rangesToFetch.push({ key: 'ranking', range: `${rankingTab}!A1:Z200` });
+  if (titles.includes(matchesTab)) rangesToFetch.push({ key: 'matches', range: `${matchesTab}!A1:Z300` });
+  if (titles.includes(standingsTab)) rangesToFetch.push({ key: 'standings', range: `${standingsTab}!A1:Z200` });
+
+  if (rangesToFetch.length === 0) {
+    return {
+      eventCode: resolvedEvent,
+      rankingRows: [],
+      simMatchRows: [],
+      standingsRows: [],
+    };
+  }
+
+  const batchRes = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: sheetId,
+    ranges: rangesToFetch.map((r) => r.range),
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  });
+
+  const valueRanges = batchRes.data.valueRanges || [];
+  let rankingRows: unknown[][] = [];
+  let simMatchRows: unknown[][] = [];
+  let standingsRows: unknown[][] = [];
+
+  rangesToFetch.forEach((item, idx) => {
+    const values = valueRanges[idx]?.values || [];
+    if (item.key === 'ranking') rankingRows = values;
+    if (item.key === 'matches') simMatchRows = values;
+    if (item.key === 'standings') standingsRows = values;
+  });
+
+  return {
+    eventCode: resolvedEvent,
+    rankingRows,
+    simMatchRows,
+    standingsRows,
+  };
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DistributionBars from '@/components/DistributionBars';
 import DuelComparisonBars from '@/components/DuelComparisonBars';
 import RagnarokFieldHeatmap, { FieldMarker } from '@/components/RagnarokFieldHeatmap';
@@ -15,7 +15,7 @@ import {
 } from '@/lib/roles';
 import type { AnalyticsPayload, ScheduleMatch, TeamAnalytics } from '@/lib/types';
 
-type ViewTab = 'ranking' | 'equipo' | 'match' | 'alianza';
+type ViewTab = 'ranking' | 'equipo' | 'match' | 'alianza' | 'standings';
 type SortKey =
   | 'rank'
   | 'team'
@@ -80,11 +80,31 @@ export default function RagnarokAnalyticsPage() {
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
 
-  const fetchAnalytics = useCallback(async () => {
+  // Timestone refresh & staleness (>1h) control
+  const [timestoneRefreshing, setTimestoneRefreshing] = useState(false);
+  const [timestoneStatusMsg, setTimestoneStatusMsg] = useState<string | null>(null);
+  const autoTriggeredEventsRef = useRef<Set<string>>(new Set());
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadedEventRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    loadedEventRef.current = loadedEvent?.code;
+  }, [loadedEvent]);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  const fetchAnalytics = useCallback(async (eventOverride?: string): Promise<AnalyticsPayload | null> => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/analytics', { cache: 'no-store' });
+      const targetEvent = eventOverride || loadedEventRef.current;
+      const qs = targetEvent ? `?event=${encodeURIComponent(targetEvent)}` : '';
+      const res = await fetch(`/api/analytics${qs}`, { cache: 'no-store' });
       const data: AnalyticsPayload = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Error obteniendo analíticas');
@@ -101,20 +121,97 @@ export default function RagnarokAnalyticsPage() {
         setOpp1((prev) => prev || data.teams[2]?.team || data.teams[0]?.team || 0);
         setOpp2((prev) => prev || data.teams[3]?.team || data.teams[1]?.team || 0);
       }
+      return data;
     } catch (err: any) {
       setError(err.message || 'Error de red');
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const triggerTimestoneRefresh = useCallback(
+    async (eventOverride?: string, isAuto = false) => {
+      const targetEvent = (
+        eventOverride ||
+        loadedEventRef.current ||
+        payload?.timestone?.eventCode ||
+        'MXTO'
+      ).toUpperCase();
+      const prevUpdatedAt = payload?.timestone?.updatedAt ?? null;
+
+      setTimestoneRefreshing(true);
+      setTimestoneStatusMsg(
+        isAuto
+          ? `Datos Timestone (${targetEvent}) con más de 1h sin actualizar; ejecutando actualización automática...`
+          : `Lanzando actualización Timestone (${targetEvent})...`
+      );
+
+      try {
+        const res = await fetch('/api/timestone/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventCode: targetEvent,
+            season: eventSeason,
+            force: !isAuto,
+          }),
+        });
+        const json = await res.json();
+
+        if (!res.ok || !json.success) {
+          if (res.status === 501 && isAuto) {
+            setTimestoneStatusMsg(null);
+            return;
+          }
+          throw new Error(json.error || 'No se pudo iniciar la actualización de Timestone');
+        }
+
+        if (json.mode === 'local-python') {
+          setTimestoneStatusMsg(`Timestone (${targetEvent}) actualizado localmente.`);
+          await fetchAnalytics(targetEvent);
+          setTimestoneRefreshing(false);
+          return;
+        }
+
+        // GitHub Actions u otro runner asíncrono: hacer polling acotado hasta detectar nuevo Updated_At
+        setTimestoneStatusMsg(json.message || `Sincronizando Timestone (${targetEvent})...`);
+        stopPolling();
+        let attempts = 0;
+        pollTimerRef.current = setInterval(async () => {
+          attempts += 1;
+          const fresh = await fetchAnalytics(targetEvent);
+          const nextTs = fresh?.timestone?.updatedAt ?? null;
+          const changed = nextTs !== null && nextTs !== prevUpdatedAt && !fresh?.timestone?.isStale;
+          if (changed || attempts >= 6) {
+            stopPolling();
+            setTimestoneRefreshing(false);
+            setTimestoneStatusMsg(
+              changed
+                ? `Timestone (${targetEvent}) sincronizado correctamente.`
+                : `Actualización de Timestone (${targetEvent}) enviada; vuelve a pulsar Actualizar en unos segundos si aún sigue corriendo.`
+            );
+          }
+        }, 12_000);
+      } catch (err: any) {
+        setTimestoneRefreshing(false);
+        setTimestoneStatusMsg(err.message || 'Error al actualizar Timestone');
+      }
+    },
+    [eventSeason, fetchAnalytics, payload?.timestone?.eventCode, payload?.timestone?.updatedAt, stopPolling]
+  );
+
   useEffect(() => {
-    fetchAnalytics();
+    let initialEvent: string | undefined;
     try {
       const savedEvent = localStorage.getItem(EVENT_STORAGE_KEY);
       if (savedEvent) {
         const parsed = JSON.parse(savedEvent);
-        if (parsed.event) setLoadedEvent(parsed.event);
+        if (parsed.event) {
+          setLoadedEvent(parsed.event);
+          initialEvent = parsed.event.code;
+          loadedEventRef.current = parsed.event.code;
+        }
         if (Array.isArray(parsed.matches)) setScheduleMatches(parsed.matches);
       }
       const savedTags = localStorage.getItem(PICK_TAGS_STORAGE_KEY);
@@ -124,7 +221,20 @@ export default function RagnarokAnalyticsPage() {
     } catch {
       // ignore localStorage read errors
     }
-  }, [fetchAnalytics]);
+
+    fetchAnalytics(initialEvent).then((data) => {
+      const ts = data?.timestone;
+      if (ts && ts.isStale && !autoTriggeredEventsRef.current.has(ts.eventCode)) {
+        autoTriggeredEventsRef.current.add(ts.eventCode);
+        triggerTimestoneRefresh(ts.eventCode, true);
+      }
+    });
+
+    return () => {
+      stopPolling();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cyclePickTag = (teamNum: number) => {
     setPickTags((prev) => {
@@ -175,8 +285,16 @@ export default function RagnarokAnalyticsPage() {
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.error || 'Evento no encontrado');
       setLoadedEvent(json.event);
+      loadedEventRef.current = json.event.code;
       setScheduleMatches(json.matches || []);
       localStorage.setItem(EVENT_STORAGE_KEY, JSON.stringify({ event: json.event, matches: json.matches || [] }));
+
+      const fresh = await fetchAnalytics(json.event.code);
+      const ts = fresh?.timestone;
+      if (ts && ts.isStale && !autoTriggeredEventsRef.current.has(ts.eventCode)) {
+        autoTriggeredEventsRef.current.add(ts.eventCode);
+        triggerTimestoneRefresh(ts.eventCode, true);
+      }
     } catch (err: any) {
       setEventError(err.message);
     } finally {
@@ -268,10 +386,26 @@ export default function RagnarokAnalyticsPage() {
 
   const redAllianceProj = aggregateAlliance([red1, red2]);
   const blueAllianceProj = aggregateAlliance([blue1, blue2]);
-  const redWinProb =
+
+  const timestoneData = payload?.timestone;
+  const timestoneMatch = useMemo(() => {
+    const list = timestoneData?.matches || [];
+    if (!list.length) return null;
+    const byNum =
+      list.find((m) => m.match === matchNum && m.nivel.toUpperCase() === 'QUALS') ||
+      list.find((m) => m.match === matchNum);
+    if (!byNum) return null;
+    const sameTeams =
+      byNum.red1 === red1 && byNum.red2 === red2 && byNum.blue1 === blue1 && byNum.blue2 === blue2;
+    return sameTeams ? byNum : null;
+  }, [timestoneData?.matches, matchNum, red1, red2, blue1, blue2]);
+
+  const fallbackRedWinProb =
     redAllianceProj.net + blueAllianceProj.net > 0
       ? Math.round((Math.max(1, redAllianceProj.net) / (Math.max(1, redAllianceProj.net) + Math.max(1, blueAllianceProj.net))) * 100)
       : 50;
+  const redWinProb = timestoneMatch ? timestoneMatch.redWinPct : fallbackRedWinProb;
+  const blueWinProb = timestoneMatch ? timestoneMatch.blueWinPct : 100 - fallbackRedWinProb;
 
   const matchFieldMarkers: FieldMarker[] = [
     ...redAllianceProj.members.map((m, idx) => ({
@@ -335,6 +469,7 @@ export default function RagnarokAnalyticsPage() {
                 { id: 'equipo', label: 'Perfil de Equipo' },
                 { id: 'match', label: 'Match 2v2' },
                 { id: 'alianza', label: 'Simulador Alianzas' },
+                { id: 'standings', label: 'Standings Proy.' },
               ] as { id: ViewTab; label: string }[]
             ).map((item) => (
               <button
@@ -348,17 +483,77 @@ export default function RagnarokAnalyticsPage() {
             ))}
           </nav>
 
-          <button type="button" onClick={fetchAnalytics} disabled={loading} className="btn-rag">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="23 4 23 10 17 10" />
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-            </svg>
-            {loading ? 'Sincronizando...' : 'Actualizar'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => triggerTimestoneRefresh(undefined, false)}
+              disabled={timestoneRefreshing}
+              className="btn-ghost"
+              title={
+                timestoneData?.updatedAt
+                  ? `Último Timestone (${timestoneData.eventCode}): ${new Date(timestoneData.updatedAt).toLocaleString('es-MX')}`
+                  : 'Ejecutar simulación Timestone (Monte Carlo + FTCScout)'
+              }
+            >
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '999px',
+                  background: timestoneRefreshing
+                    ? 'var(--accent-amber)'
+                    : timestoneData?.available && !timestoneData?.isStale
+                      ? 'var(--accent-emerald)'
+                      : 'var(--accent-amber)',
+                  display: 'inline-block',
+                }}
+              />
+              {timestoneRefreshing
+                ? 'Simulando...'
+                : timestoneData?.available
+                  ? `Timestone (${timestoneData.eventCode})${timestoneData.ageMinutes !== null ? ` • ${timestoneData.ageMinutes}m` : ''}`
+                  : 'Refrescar Timestone'}
+            </button>
+
+            <button type="button" onClick={() => fetchAnalytics()} disabled={loading} className="btn-rag">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+              {loading ? 'Sincronizando...' : 'Actualizar'}
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="main-container">
+        {timestoneStatusMsg && (
+          <div
+            style={{
+              background: 'rgba(99, 102, 241, 0.14)',
+              border: '1px solid var(--bey-indigo)',
+              borderRadius: '6px',
+              padding: '10px 14px',
+              fontSize: '12px',
+              fontWeight: 700,
+              color: 'var(--text-silver)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '10px',
+            }}
+          >
+            <span>{timestoneStatusMsg}</span>
+            <button
+              type="button"
+              onClick={() => setTimestoneStatusMsg(null)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 900 }}
+              aria-label="Cerrar aviso"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {error && (
           <div
             style={{
@@ -500,12 +695,13 @@ export default function RagnarokAnalyticsPage() {
                         {col.l} {sortKey === col.k ? (sortAsc ? '▲' : '▼') : ''}
                       </th>
                     ))}
+                    {timestoneData?.available && <th title="EPA ponderado Timestone (y EPA Operativo)">EPA Sim.</th>}
                   </tr>
                 </thead>
                 <tbody className="tabular">
                   {filteredTeams.length === 0 ? (
                     <tr>
-                      <td colSpan={17} style={{ padding: '28px', color: 'var(--text-muted)' }}>
+                      <td colSpan={timestoneData?.available ? 18 : 17} style={{ padding: '28px', color: 'var(--text-muted)' }}>
                         {loading ? 'Cargando datos...' : 'Sin equipos que coincidan con el filtro.'}
                       </td>
                     </tr>
@@ -587,6 +783,29 @@ export default function RagnarokAnalyticsPage() {
                           </td>
                           <td>{t.driverAvg.toFixed(1)}</td>
                           <td style={{ color: 'var(--accent-amber)' }}>{t.maxNet}</td>
+                          {timestoneData?.available && (
+                            <td
+                              title={
+                                t.timestone
+                                  ? `Operativo: ${t.timestone.epaOperational.toFixed(1)} • Fallas excl.: ${t.timestone.excludedOldFailures}`
+                                  : 'Sin datos en Timestone'
+                              }
+                              style={{ fontWeight: 800, color: 'var(--bey-cyan)' }}
+                            >
+                              {t.timestone ? (
+                                <>
+                                  {t.timestone.epa.toFixed(1)}
+                                  {Math.abs(t.timestone.epaOperational - t.timestone.epa) >= 1 && (
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                                      (Op {t.timestone.epaOperational.toFixed(0)})
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -934,12 +1153,38 @@ export default function RagnarokAnalyticsPage() {
 
             {/* Win Probability Bar */}
             <div className="panel" style={{ padding: '14px 16px' }}>
-              <div className="tabular" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '13px', fontWeight: 900 }}>
-                <span style={{ color: 'var(--rag-crimson)' }}>ROJA PROYECTADA: {redAllianceProj.net.toFixed(1)} PTS ({redWinProb}%)</span>
-                <span style={{ color: 'var(--accent-cyan)' }}>AZUL PROYECTADA: {blueAllianceProj.net.toFixed(1)} PTS ({100 - redWinProb}%)</span>
+              <div className="tabular" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '13px', fontWeight: 900, flexWrap: 'wrap', gap: '8px' }}>
+                <span style={{ color: 'var(--rag-crimson)' }}>
+                  ROJA PROYECTADA: {timestoneMatch ? timestoneMatch.redEst.toFixed(0) : redAllianceProj.net.toFixed(1)} PTS ({redWinProb.toFixed(1)}%)
+                  {timestoneMatch && (
+                    <span style={{ marginLeft: '8px', fontSize: '11px', color: 'var(--rag-coral)' }}>
+                      • {timestoneMatch.redRpsEst.toFixed(2)} xRP
+                    </span>
+                  )}
+                </span>
+                {timestoneMatch ? (
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: 'var(--bey-purple)', background: 'var(--bey-plum)', padding: '2px 8px', borderRadius: '4px' }}>
+                    MONTE CARLO TIMESTONE
+                    {timestoneMatch.tiePct > 0 ? ` • Empate ${timestoneMatch.tiePct.toFixed(1)}%` : ''}
+                    {timestoneMatch.jugado && timestoneMatch.redReal !== null && timestoneMatch.blueReal !== null
+                      ? ` • REAL: ${timestoneMatch.redReal} - ${timestoneMatch.blueReal}`
+                      : ''}
+                  </span>
+                ) : null}
+                <span style={{ color: 'var(--accent-cyan)' }}>
+                  AZUL PROYECTADA: {timestoneMatch ? timestoneMatch.blueEst.toFixed(0) : blueAllianceProj.net.toFixed(1)} PTS ({blueWinProb.toFixed(1)}%)
+                  {timestoneMatch && (
+                    <span style={{ marginLeft: '8px', fontSize: '11px', color: '#7DD3FC' }}>
+                      • {timestoneMatch.blueRpsEst.toFixed(2)} xRP
+                    </span>
+                  )}
+                </span>
               </div>
               <div style={{ height: '10px', width: '100%', background: 'var(--accent-cyan)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
                 <div style={{ width: `${redWinProb}%`, background: 'var(--rag-crimson)' }} />
+                {timestoneMatch && timestoneMatch.tiePct > 0 && (
+                  <div style={{ width: `${timestoneMatch.tiePct}%`, background: 'var(--accent-amber)' }} />
+                )}
               </div>
             </div>
 
@@ -1159,6 +1404,132 @@ export default function RagnarokAnalyticsPage() {
                 { label: 'Faltas', leftVal: myAllianceProj.fouls, rightVal: oppAllianceProj.fouls, lowerIsBetter: true },
               ]}
             />
+          </>
+        )}
+
+        {/* ================= 5. STANDINGS PROYECTADOS (HÍBRIDO REAL + MONTE CARLO) ================= */}
+        {tab === 'standings' && (
+          <>
+            <section className="kpi-grid">
+              <div className="kpi-card">
+                <span className="kpi-label">Evento Timestone</span>
+                <span className="kpi-value tabular">{timestoneData?.eventCode || 'MXTO'}</span>
+                <span className="kpi-sub">
+                  {timestoneData?.updatedAt
+                    ? `Actualizado ${new Date(timestoneData.updatedAt).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                    : 'Sin ejecución previa registrada'}
+                </span>
+              </div>
+              <div className="kpi-card">
+                <span className="kpi-label">Equipos en Ranking</span>
+                <span className="kpi-value tabular">{timestoneData?.standings.length ?? 0}</span>
+                <span className="kpi-sub">Con simulación Monte Carlo</span>
+              </div>
+              <div className="kpi-card" style={{ borderTopColor: 'var(--accent-amber)' }}>
+                <span className="kpi-label">Líder Proyectado</span>
+                <span className="kpi-value tabular" style={{ color: 'var(--accent-amber)' }}>
+                  {timestoneData?.standings[0] ? `#${timestoneData.standings[0].team}` : '—'}
+                </span>
+                <span className="kpi-sub tabular">
+                  {timestoneData?.standings[0]
+                    ? `${timestoneData.standings[0].rpPromedio.toFixed(2)} RP/match • ${timestoneData.standings[0].probTop4Pct.toFixed(0)}% Top 4`
+                    : 'Sin datos'}
+                </span>
+              </div>
+              <div className="kpi-card" style={{ borderTopColor: timestoneData?.isStale ? 'var(--rag-crimson)' : 'var(--accent-emerald)' }}>
+                <span className="kpi-label">Estado Frescura</span>
+                <span className="kpi-value tabular" style={{ color: timestoneData?.isStale ? 'var(--accent-amber)' : 'var(--accent-emerald)', fontSize: '22px' }}>
+                  {timestoneData?.ageMinutes !== null && timestoneData?.ageMinutes !== undefined
+                    ? `${timestoneData.ageMinutes} min`
+                    : 'Pendiente'}
+                </span>
+                <span className="kpi-sub">Auto-refresco si supera 60 min</span>
+              </div>
+            </section>
+
+            {!timestoneData?.standings.length ? (
+              <div className="panel" style={{ padding: '28px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-silver)' }}>
+                  Todavía no hay datos en Standings_Proy_{timestoneData?.eventCode || 'MXTO'}.
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '520px' }}>
+                  Ejecuta Timestone desde Colab, en local o pulsando el botón inferior (requiere GitHub Actions configurado en Vercel).
+                </div>
+                <button
+                  type="button"
+                  onClick={() => triggerTimestoneRefresh(undefined, false)}
+                  disabled={timestoneRefreshing}
+                  className="btn-rag"
+                >
+                  {timestoneRefreshing ? 'Ejecutando Timestone...' : 'Generar Standings con Timestone'}
+                </button>
+              </div>
+            ) : (
+              <div className="table-wrap" style={{ maxHeight: '66vh', overflowY: 'auto' }}>
+                <table className="rag-table">
+                  <thead>
+                    <tr>
+                      <th>Rank Proy.</th>
+                      <th>Equipo</th>
+                      <th>Nombre</th>
+                      <th>PJ Jug.</th>
+                      <th>PJ Rest.</th>
+                      <th>RPs Reales</th>
+                      <th>RPs Est. Total</th>
+                      <th>RP Prom.</th>
+                      <th>Score Prom.</th>
+                      <th>Rango Rank</th>
+                      <th>Prob. Top 4</th>
+                    </tr>
+                  </thead>
+                  <tbody className="tabular">
+                    {timestoneData.standings.map((row) => {
+                      const inTop4 = row.rankProyectado <= 4;
+                      return (
+                        <tr
+                          key={row.team}
+                          onClick={() => openTeamProfile(row.team)}
+                          style={inTop4 ? { background: 'rgba(16, 185, 129, 0.05)' } : undefined}
+                        >
+                          <td style={{ fontWeight: 900, color: inTop4 ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
+                            #{row.rankProyectado}
+                          </td>
+                          <td style={{ fontWeight: 900, color: '#FFFFFF' }}>#{row.team}</td>
+                          <td style={{ textAlign: 'left', color: 'var(--text-silver)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row.name}
+                          </td>
+                          <td>{row.pjJugados}</td>
+                          <td style={{ color: 'var(--text-muted)' }}>{row.pjRestantes}</td>
+                          <td style={{ fontWeight: 800, color: 'var(--accent-cyan)' }}>{row.rpsReales}</td>
+                          <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{row.rpsTotales.toFixed(2)}</td>
+                          <td style={{ fontWeight: 800, color: 'var(--accent-amber)' }}>{row.rpPromedio.toFixed(2)}</td>
+                          <td>{row.scorePromedio.toFixed(1)}</td>
+                          <td style={{ color: 'var(--text-muted)' }}>
+                            #{row.rankMin}–#{row.rankMax}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '115px' }}>
+                              <div style={{ flex: 1, height: '7px', background: 'var(--bg-carbon)', borderRadius: '3px', overflow: 'hidden' }}>
+                                <div
+                                  style={{
+                                    width: `${Math.min(100, Math.max(0, row.probTop4Pct))}%`,
+                                    height: '100%',
+                                    background: row.probTop4Pct >= 60 ? 'var(--accent-emerald)' : row.probTop4Pct >= 25 ? 'var(--accent-amber)' : 'var(--rag-crimson)',
+                                  }}
+                                />
+                              </div>
+                              <span style={{ fontWeight: 800, width: '40px', textAlign: 'right' }}>
+                                {row.probTop4Pct.toFixed(0)}%
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </main>
