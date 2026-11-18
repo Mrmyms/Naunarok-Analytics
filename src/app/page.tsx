@@ -302,15 +302,15 @@ export default function RagnarokAnalyticsPage() {
       {/* Top Pit-Wall Bar */}
       <header className="topbar">
         <div className="topbar-inner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <img
               src="/ragnarok-logo.svg"
               alt="Logo Ragnarok"
-              width={40}
-              height={34}
-              style={{ display: 'block', flexShrink: 0, filter: 'drop-shadow(0 0 6px rgba(237, 18, 21, 0.35))' }}
+              width={56}
+              height={47}
+              style={{ display: 'block', flexShrink: 0, filter: 'drop-shadow(0 0 8px rgba(237, 18, 21, 0.42))' }}
             />
-            <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '0.8px', color: '#FAFAFA' }}>
+            <div style={{ fontSize: '17px', fontWeight: 900, letterSpacing: '0.8px', color: '#FAFAFA' }}>
               RAGNAROK <span style={{ color: 'var(--rag-crimson)' }}>ANALYTICS</span>
             </div>
           </div>
