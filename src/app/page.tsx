@@ -1611,14 +1611,18 @@ export default function RagnarokAnalyticsPage() {
                     : 'Sin datos'}
                 </span>
               </div>
-              <div className="kpi-card" style={{ borderTopColor: timestoneData?.isStale ? 'var(--rag-crimson)' : 'var(--accent-emerald)' }}>
-                <span className="kpi-label">Estado Frescura</span>
-                <span className="kpi-value tabular" style={{ color: timestoneData?.isStale ? 'var(--accent-amber)' : 'var(--accent-emerald)', fontSize: '22px' }}>
-                  {timestoneData?.ageMinutes !== null && timestoneData?.ageMinutes !== undefined
-                    ? `${timestoneData.ageMinutes} min`
-                    : 'Pendiente'}
+              <div className="kpi-card" style={{ borderTopColor: 'var(--accent-emerald)' }}>
+                <span className="kpi-label">Corte Top 4</span>
+                <span className="kpi-value tabular" style={{ color: 'var(--accent-emerald)' }}>
+                  {timestoneData?.standings[3]
+                    ? `${timestoneData.standings[3].rpPromedio.toFixed(2)}`
+                    : '—'}
                 </span>
-                <span className="kpi-sub">Auto-refresco si supera 60 min</span>
+                <span className="kpi-sub tabular">
+                  {timestoneData?.standings[3]
+                    ? `RP/match (#${timestoneData.standings[3].team} • ${timestoneData.standings[3].probTop4Pct.toFixed(0)}% Top 4)`
+                    : 'Se requieren ≥ 4 equipos'}
+                </span>
               </div>
             </section>
 
