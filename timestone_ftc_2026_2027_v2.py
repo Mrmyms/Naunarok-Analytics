@@ -345,6 +345,8 @@ TRUE_VALUES = {"SI", "SÍ", "YES", "1", "TRUE"}
 # CELL 2 — Funciones Matemáticas, Normalización y Auxiliares
 # ==============================================================================
 
+
+# Esta es por si algun dato esta vacio y asi no se corrompa nada
 def to_numeric_safe(value: Any, default: float = 0.0) -> float:
     """Convierte cualquier celda (``""``, ``None``, ``NaN``, texto) a ``float`` seguro."""
     if value is None or isinstance(value, (bool, np.bool_)):

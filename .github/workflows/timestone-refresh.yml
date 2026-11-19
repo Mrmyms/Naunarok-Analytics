@@ -56,5 +56,5 @@ jobs:
           if [ -n "${{ inputs.ftcscout_code }}" ]; then
             ARGS+=(--ftcscout-code "${{ inputs.ftcscout_code }}")
           fi
-          python timestone_ftc_2026_2027_v1.py "${ARGS[@]}"
+          python timestone_ftc_2026_2027_v2.py "${ARGS[@]}"
 

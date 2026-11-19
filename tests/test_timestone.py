@@ -13,7 +13,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import timestone_ftc_2026_2027_v1 as ts
+import timestone_ftc_2026_2027_v2 as ts
 
 
 def _make_scouting_row(**overrides) -> dict:

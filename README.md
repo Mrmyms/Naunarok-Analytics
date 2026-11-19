@@ -16,9 +16,9 @@ Dashboard de telemetría avanzada, picklist, simulador Monte Carlo (Timestone) y
 - `GOOGLE_PRIVATE_KEY`
 
 ## Ejecución local / Colab de Timestone
-- En Google Colab: ejecutar `timestone_ftc_2026_2027_v1.py` directamente.
+- En Google Colab: ejecutar `timestone_ftc_2026_2027_v2.py` directamente.
 - En local:
   ```bash
-  .venv/bin/python timestone_ftc_2026_2027_v1.py --event MXTO
+  .venv/bin/python timestone_ftc_2026_2027_v2.py --event MXTO
   .venv/bin/pytest -v tests/test_timestone.py
   ```

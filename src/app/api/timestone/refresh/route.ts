@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
     // 1. Ejecución directa en servidor local / self-hosted si existe .venv y script Python
     const isVercel = process.env.VERCEL === '1';
-    const scriptPath = path.resolve(process.cwd(), 'timestone_ftc_2026_2027_v1.py');
+    const scriptPath = path.resolve(process.cwd(), 'timestone_ftc_2026_2027_v2.py');
     const venvPython = path.resolve(process.cwd(), '.venv', 'bin', 'python');
     const hasLocalPython = !isVercel && fs.existsSync(scriptPath) && fs.existsSync(venvPython);
 
