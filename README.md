@@ -4,13 +4,13 @@ Dashboard de telemetría avanzada, ficha técnica de pits + galería de fotos, p
 
 ## Rutas Principales
 - `/` (**The Beyonder**):
-  - **Ranking & Picklist**: filtros por rol, confiabilidad, bajas faltas, filtro **`Con Pit`**, búsqueda por número o nombre de equipo, y etiquetas de picklist persistidas.
+  - **Ranking & Picklist**: clasificación compuesta por características (**Tier S/A/B/C** y score 0–100) con 4 perfiles de pesos (`Balanceado`, `Máx. Ofensiva`, `Defensivo`, `Playoffs`), métricas **OPR**, **DPR**, **CCWM**, **Rank Ofensivo**, **Rank Defensivo** y **Rank Promedio OPR–DPR**, filtro por **Tipo de Robot** (`Torreta`, `Dumper`, `Shooter fijo`, etc.), rol, confiabilidad, bajas faltas y **`Con Pit`**.
   - **Perfil de Equipo** (reestructurado en 3 secciones):
-    1. **Resumen & Pit**: comparativa 1v1 (telemetría + pits), galería de fotos del robot con lightbox (`/api/pit/photo?id=...`), especificaciones estructuradas (`Hardware & Mecánica`, `Autónomo & Software`, `Equipo & Observaciones`), eficiencia y notas de scouters.
+    1. **Resumen & Pit**: comparativa 1v1 (incluye score compuesto, OPR/DPR/CCWM y pits), desglose de clasificación por 6 características (`Ofensiva`, `Defensa`, `Autónomo`, `Confiabilidad`, `Disciplina`, `Piloto`), galería de fotos del robot con lightbox (`/api/pit/photo?id=...`), especificaciones estructuradas (`Hardware & Mecánica`, `Autónomo & Software`, `Equipo & Observaciones`), eficiencia y notas de scouters.
     2. **Gráficas & Cancha**: radar BIOBUZZ (con overlay 1v1), distribuciones Balancín vs Flor, tendencia histórica y mapa de calor 6×6 de zonas de inicio `A–E`.
     3. **Bitácora**: historial partido a partido y alertas.
   - **Match 2v2**, **Simulador Alianzas** y **Standings Proy.**.
-- `/api/analytics`: agrega `Captura_BIOBUZZ`, `Resumen_Equipos`, `Pit_BIOBUZZ`, metadatos de `Pit_Fotos` y hojas `*_EVENT` de Timestone.
+- `/api/analytics`: agrega `Captura_BIOBUZZ`, `Resumen_Equipos`, `Pit_BIOBUZZ` (`A:T`), metadatos de `Pit_Fotos`, hojas `*_EVENT` de Timestone y cálculo automático de OPR/DPR/CCWM (desde `Ranking_EPA_*` o mediante solver en tiempo real sobre matches jugados).
 - `/api/pit/photo?id=...`: reconstruye y sirve imágenes almacenadas en `Pit_Fotos` por fragmentos Base64.
 - `/api/timestone/refresh`: ejecuta Timestone en local (`.venv`) o vía GitHub Actions (`timestone-refresh.yml`).
 

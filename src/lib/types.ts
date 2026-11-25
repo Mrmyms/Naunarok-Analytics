@@ -53,6 +53,12 @@ export interface TimestoneTeamMetric {
   reliabilityPct: number;
   excludedOldFailures: number;
   posEstimada: string;
+  opr?: number | null;
+  dpr?: number | null;
+  ccwm?: number | null;
+  rankOff?: number | null;
+  rankDef?: number | null;
+  rankCombAvg?: number | null;
 }
 
 export interface TimestoneMatchSim {
@@ -123,6 +129,7 @@ export interface PitProfile {
   team: number;
   teamName: string;
   scouter: string;
+  robotType: string;
   chassisType: string;
   weightLb: number | null;
   intakeType: string;

@@ -114,7 +114,7 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
   const standingsTab = `Standings_Proy_${resolvedEvent}`;
 
   const rangesToFetch: { key: 'ranking' | 'matches' | 'standings'; range: string }[] = [];
-  if (titles.includes(rankingTab)) rangesToFetch.push({ key: 'ranking', range: `${rankingTab}!A1:Z200` });
+  if (titles.includes(rankingTab)) rangesToFetch.push({ key: 'ranking', range: `${rankingTab}!A1:AF200` });
   if (titles.includes(matchesTab)) rangesToFetch.push({ key: 'matches', range: `${matchesTab}!A1:Z300` });
   if (titles.includes(standingsTab)) rangesToFetch.push({ key: 'standings', range: `${standingsTab}!A1:Z200` });
 
@@ -176,7 +176,7 @@ export async function fetchPitScoutingData(): Promise<{
 
   const ranges: { key: 'pit' | 'photos'; range: string }[] = [];
   if (titles.includes('Pit_BIOBUZZ')) {
-    ranges.push({ key: 'pit', range: 'Pit_BIOBUZZ!A1:S1000' });
+    ranges.push({ key: 'pit', range: 'Pit_BIOBUZZ!A1:T1000' });
   }
   if (titles.includes('Pit_Fotos')) {
     ranges.push({ key: 'photos', range: 'Pit_Fotos!A2:I50000' });

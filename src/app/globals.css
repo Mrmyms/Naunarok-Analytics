@@ -506,6 +506,12 @@ body {
   gap: 10px;
 }
 
+.match-finder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 @media (max-width: 1140px) {
   .nav-subbar-inner {
     flex-direction: column;
@@ -532,7 +538,8 @@ body {
     grid-template-columns: 1fr;
   }
   .split-2col,
-  .match-2col {
+  .match-2col,
+  .match-finder-grid {
     grid-template-columns: 1fr;
   }
 }

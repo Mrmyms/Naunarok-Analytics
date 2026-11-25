@@ -1699,6 +1699,108 @@ def _strip_private_keys(record: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in record.items() if not str(k).startswith("_")}
 
 
+def compute_event_opr_dpr(
+    matches_df: pd.DataFrame,
+    all_team_ids: List[int],
+) -> Dict[int, Dict[str, Any]]:
+    """Calcula OPR, DPR, CCWM y rankings ofensivo/defensivo desde matches jugados."""
+    if matches_df is None or matches_df.empty:
+        return {}
+
+    eq_rows: List[Tuple[int, int, float, float]] = []
+    active_teams_set = set()
+
+    for _, row in matches_df.iterrows():
+        t_level = str(row.get("tournament_level", "Quals")).strip().upper()
+        if t_level != "QUALS":
+            continue
+        if not bool(row.get("has_been_played", False)):
+            continue
+
+        r1 = int(to_numeric_safe(row.get("RED1"), 0))
+        r2 = int(to_numeric_safe(row.get("RED2"), 0))
+        b1 = int(to_numeric_safe(row.get("BLUE1"), 0))
+        b2 = int(to_numeric_safe(row.get("BLUE2"), 0))
+        if r1 <= 0 or r2 <= 0 or b1 <= 0 or b2 <= 0:
+            continue
+
+        red_np = row.get("actual_red_np")
+        red_tot = row.get("actual_red_score")
+        blue_np = row.get("actual_blue_np")
+        blue_tot = row.get("actual_blue_score")
+
+        r_score_raw = red_np if pd.notna(red_np) else red_tot
+        b_score_raw = blue_np if pd.notna(blue_np) else blue_tot
+        if pd.isna(r_score_raw) or pd.isna(b_score_raw):
+            continue
+
+        r_score = float(r_score_raw)
+        b_score = float(b_score_raw)
+        eq_rows.append((r1, r2, r_score, b_score))
+        eq_rows.append((b1, b2, b_score, r_score))
+        active_teams_set.update([r1, r2, b1, b2])
+
+    if not eq_rows:
+        return {}
+
+    active_teams = sorted(active_teams_set)
+    idx_map = {tid: idx for idx, tid in enumerate(active_teams)}
+    n_eq = len(eq_rows)
+    n_teams = len(active_teams)
+
+    M = np.zeros((n_eq, n_teams), dtype=float)
+    y_own = np.zeros(n_eq, dtype=float)
+    y_opp = np.zeros(n_eq, dtype=float)
+
+    for i, (t1, t2, own_s, opp_s) in enumerate(eq_rows):
+        M[i, idx_map[t1]] += 1.0
+        M[i, idx_map[t2]] += 1.0
+        y_own[i] = own_s
+        y_opp[i] = opp_s
+
+    opr_vec = np.linalg.lstsq(M, y_own, rcond=None)[0]
+    dpr_vec = np.linalg.lstsq(M, y_opp, rcond=None)[0]
+
+    records = []
+    for tid in active_teams:
+        idx = idx_map[tid]
+        opr_val = round(float(opr_vec[idx]), 2)
+        dpr_val = round(float(dpr_vec[idx]), 2)
+        ccwm_val = round(opr_val - dpr_val, 2)
+        records.append({
+            "team": tid,
+            "opr": opr_val,
+            "dpr": dpr_val,
+            "ccwm": ccwm_val,
+            "rank_off": 0,
+            "rank_def": 0,
+        })
+
+    for rank_i, rec in enumerate(
+        sorted(records, key=lambda x: (-x["opr"], -x["ccwm"], x["team"])),
+        start=1,
+    ):
+        rec["rank_off"] = rank_i
+
+    for rank_i, rec in enumerate(
+        sorted(records, key=lambda x: (x["dpr"], -x["ccwm"], x["team"])),
+        start=1,
+    ):
+        rec["rank_def"] = rank_i
+
+    out: Dict[int, Dict[str, Any]] = {}
+    for rec in records:
+        out[rec["team"]] = {
+            "opr": rec["opr"],
+            "dpr": rec["dpr"],
+            "ccwm": rec["ccwm"],
+            "rank_off": rec["rank_off"],
+            "rank_def": rec["rank_def"],
+            "rank_comb_avg": round((rec["rank_off"] + rec["rank_def"]) / 2.0, 1),
+        }
+    return out
+
+
 def build_export_tables(
     EVENT: str,
     scouting_df: pd.DataFrame,
@@ -1713,6 +1815,7 @@ def build_export_tables(
     rng = np.random.default_rng(seed)
     matches_norm = _ensure_match_defaults(matches_df)
     all_team_ids = _collect_all_team_ids(teams_names_df, scouting_df, matches_norm)
+    opr_dpr_map = compute_event_opr_dpr(matches_norm, all_team_ids)
 
     # ── 1. TABLA DE ROBOTS Y RANKING EPA ───────────────────────────────────────
     robot_cache: Dict[int, Dict[str, Any]] = {}
@@ -1722,6 +1825,7 @@ def build_export_tables(
     for tid in all_team_ids:
         r_dict = simulate_robot(EVENT, tid, scouting_df, teams_names_df, matches_norm)
         robot_cache[tid] = r_dict
+        od = opr_dpr_map.get(tid)
 
         r_clean = _strip_private_keys(r_dict)
         r_clean["auto_scores"] = str(r_clean["auto_scores"])
@@ -1748,6 +1852,12 @@ def build_export_tables(
             "Confiabilidad %": r_dict["reliability_pct"],
             "Fallas_Excluidas": r_dict["excluded_old_failures"],
             "Pos Estimada": r_dict["pos_type"],
+            "OPR": od["opr"] if od else "",
+            "DPR": od["dpr"] if od else "",
+            "CCWM": od["ccwm"] if od else "",
+            "Rank_Ofensivo": od["rank_off"] if od else "",
+            "Rank_Defensivo": od["rank_def"] if od else "",
+            "Rank_OPR_DPR_Prom": od["rank_comb_avg"] if od else "",
             "Updated_At": timestamp_iso,
         })
 

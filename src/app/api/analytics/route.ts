@@ -4,6 +4,7 @@ import {
   fetchPitScoutingData,
   fetchTimestoneSheets,
 } from '@/lib/googleSheets';
+import { computeOprDprFromMatches } from '@/lib/opr';
 import type {
   MatchRecord,
   PitPhotoMeta,
@@ -114,6 +115,12 @@ function parseTimestonePayload(raw: {
     return idx === undefined ? undefined : row[idx];
   };
 
+  const toOptNum = (v: unknown): number | null => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(String(v).replace('%', '').trim());
+    return Number.isFinite(n) ? n : null;
+  };
+
   let updatedAt: string | null = null;
 
   const teams: TimestoneTeamMetric[] = raw.rankingRows
@@ -143,6 +150,12 @@ function parseTimestonePayload(raw: {
         reliabilityPct: toNum(cell(r, rankHdr, 'Confiabilidad %'), 100),
         excludedOldFailures: toNum(cell(r, rankHdr, 'Fallas_Excluidas'), 0),
         posEstimada: String(cell(r, rankHdr, 'Pos Estimada') ?? 'NONE'),
+        opr: toOptNum(cell(r, rankHdr, 'OPR')),
+        dpr: toOptNum(cell(r, rankHdr, 'DPR')),
+        ccwm: toOptNum(cell(r, rankHdr, 'CCWM')),
+        rankOff: toOptNum(cell(r, rankHdr, 'Rank_Ofensivo')),
+        rankDef: toOptNum(cell(r, rankHdr, 'Rank_Defensivo')),
+        rankCombAvg: toOptNum(cell(r, rankHdr, 'Rank_OPR_DPR_Prom')),
       };
     })
     .filter((t): t is TimestoneTeamMetric => t !== null);
@@ -207,6 +220,57 @@ function parseTimestonePayload(raw: {
       };
     })
     .filter((s): s is TimestoneStandingRow => s !== null);
+
+  const hasSheetOpr = teams.some((t) => t.opr !== null && t.opr !== undefined);
+  if (!hasSheetOpr && teams.length > 0 && matches.length > 0) {
+    const playedQuals = matches.filter(
+      (m) =>
+        m.jugado &&
+        m.nivel.toUpperCase() === 'QUALS' &&
+        m.red1 > 0 &&
+        m.red2 > 0 &&
+        m.blue1 > 0 &&
+        m.blue2 > 0 &&
+        m.redReal !== null &&
+        m.blueReal !== null
+    );
+    const sourceMatches =
+      playedQuals.length > 0
+        ? playedQuals
+        : matches.filter(
+            (m) =>
+              m.jugado &&
+              m.red1 > 0 &&
+              m.red2 > 0 &&
+              m.blue1 > 0 &&
+              m.blue2 > 0 &&
+              m.redReal !== null &&
+              m.blueReal !== null
+          );
+    if (sourceMatches.length > 0) {
+      const computed = computeOprDprFromMatches(
+        sourceMatches.map((m) => ({
+          red1: m.red1,
+          red2: m.red2,
+          blue1: m.blue1,
+          blue2: m.blue2,
+          redScore: Number(m.redReal),
+          blueScore: Number(m.blueReal),
+        }))
+      );
+      teams.forEach((t) => {
+        const od = computed.get(t.team);
+        if (od) {
+          t.opr = od.opr;
+          t.dpr = od.dpr;
+          t.ccwm = od.ccwm;
+          t.rankOff = od.rankOff;
+          t.rankDef = od.rankDef;
+          t.rankCombAvg = od.rankCombAvg;
+        }
+      });
+    }
+  }
 
   const available = teams.length > 0 || matches.length > 0 || standings.length > 0;
   const ageMinutes =
@@ -323,6 +387,7 @@ export async function GET(request: Request) {
         team: teamNum,
         teamName: String(r[2] ?? '').trim(),
         scouter: String(r[3] ?? '').trim(),
+        robotType: String(r[19] ?? '').trim(),
         chassisType: String(r[4] ?? '').trim(),
         weightLb: weightNum,
         intakeType: String(r[6] ?? '').trim(),

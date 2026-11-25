@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AllianceMatchFinder from '@/components/AllianceMatchFinder';
 import DistributionBars from '@/components/DistributionBars';
 import DuelComparisonBars from '@/components/DuelComparisonBars';
 import RagnarokFieldHeatmap, { FieldMarker } from '@/components/RagnarokFieldHeatmap';
@@ -8,11 +9,15 @@ import TeamHistoricChart from '@/components/TeamHistoricChart';
 import TeamPitCard, { PitComparePanel } from '@/components/TeamPitCard';
 import TeamRadarChart from '@/components/TeamRadarChart';
 import {
+  SCORING_PROFILES,
+  computeTeamClassification,
   detectRobotRole,
   NEXT_PICK_TAG,
   PICK_TAG_META,
   type PickTag,
   type RobotRole,
+  type ScoringProfileId,
+  type TeamClassification,
 } from '@/lib/roles';
 import type { AnalyticsPayload, ScheduleMatch, TeamAnalytics } from '@/lib/types';
 
@@ -32,7 +37,12 @@ type SortKey =
   | 'reliabilityPct'
   | 'foulsAvg'
   | 'driverAvg'
-  | 'maxNet';
+  | 'maxNet'
+  | 'classScore'
+  | 'opr'
+  | 'dpr'
+  | 'ccwm'
+  | 'rankCombAvg';
 
 const EVENT_STORAGE_KEY = 'ragnarok_analytics_event_v1';
 const PICK_TAGS_STORAGE_KEY = 'ragnarok_pick_tags_v1';
@@ -46,6 +56,8 @@ export default function RagnarokAnalyticsPage() {
   // Ranking filters & picklist state
   const [searchTeam, setSearchTeam] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | RobotRole>('ALL');
+  const [robotTypeFilter, setRobotTypeFilter] = useState<string>('ALL');
+  const [scoringProfile, setScoringProfile] = useState<ScoringProfileId>('balanced');
   const [onlyReliable, setOnlyReliable] = useState(false);
   const [onlyLowFouls, setOnlyLowFouls] = useState(false);
   const [onlyWithPit, setOnlyWithPit] = useState(false);
@@ -352,9 +364,40 @@ export default function RagnarokAnalyticsPage() {
     }
   };
 
+  const classificationByTeam = useMemo(() => {
+    const map = new Map<number, TeamClassification>();
+    for (const t of teams) {
+      map.set(t.team, computeTeamClassification(t, teams, scoringProfile));
+    }
+    return map;
+  }, [teams, scoringProfile]);
+
+  const hasOprDpr = useMemo(
+    () => teams.some((t) => t.timestone?.opr !== null && t.timestone?.opr !== undefined),
+    [teams]
+  );
+
+  const availableRobotTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of teams) {
+      if (t.pit?.robotType) set.add(t.pit.robotType);
+    }
+    return Array.from(set).sort();
+  }, [teams]);
+
   const filteredTeams = useMemo(() => {
     const tagPriority: Record<PickTag, number> = { top: 0, pick: 1, none: 2, avoid: 3, drafted: 4 };
     const q = searchTeam.trim().toLowerCase();
+
+    const getNullableMetric = (t: TeamAnalytics, key: SortKey): number | null => {
+      if (key === 'classScore') return classificationByTeam.get(t.team)?.score ?? 0;
+      if (key === 'opr') return t.timestone?.opr ?? null;
+      if (key === 'dpr') return t.timestone?.dpr ?? null;
+      if (key === 'ccwm') return t.timestone?.ccwm ?? null;
+      if (key === 'rankCombAvg') return t.timestone?.rankCombAvg ?? null;
+      return t[key];
+    };
+
     return teams
       .filter((t) => {
         if (q) {
@@ -364,6 +407,7 @@ export default function RagnarokAnalyticsPage() {
           if (!teamStr.includes(q) && !pitName.includes(q) && !tsName.includes(q)) return false;
         }
         if (roleFilter !== 'ALL' && detectRobotRole(t).role !== roleFilter) return false;
+        if (robotTypeFilter !== 'ALL' && (t.pit?.robotType || '') !== robotTypeFilter) return false;
         if (onlyReliable && t.reliabilityPct < 70) return false;
         if (onlyLowFouls && t.foulsAvg > 15) return false;
         if (onlyWithPit && !t.pit) return false;
@@ -376,17 +420,42 @@ export default function RagnarokAnalyticsPage() {
           const pb = tagPriority[pickTags[b.team] || 'none'];
           if (pa !== pb) return pa - pb;
         }
-        const diff = a[sortKey] - b[sortKey];
+        const av = getNullableMetric(a, sortKey);
+        const bv = getNullableMetric(b, sortKey);
+        if (av === null && bv === null) return a.rank - b.rank;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        const diff = av - bv;
         return sortAsc ? diff : -diff;
       });
-  }, [teams, searchTeam, roleFilter, onlyReliable, onlyLowFouls, onlyWithPit, hideDrafted, prioritizeTop, pickTags, sortKey, sortAsc]);
+  }, [
+    teams,
+    searchTeam,
+    roleFilter,
+    robotTypeFilter,
+    onlyReliable,
+    onlyLowFouls,
+    onlyWithPit,
+    hideDrafted,
+    prioritizeTop,
+    pickTags,
+    sortKey,
+    sortAsc,
+    classificationByTeam,
+  ]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
     } else {
       setSortKey(key);
-      setSortAsc(key === 'rank' || key === 'team' || key === 'foulsAvg');
+      setSortAsc(
+        key === 'rank' ||
+          key === 'team' ||
+          key === 'foulsAvg' ||
+          key === 'dpr' ||
+          key === 'rankCombAvg'
+      );
     }
   };
 
@@ -827,68 +896,119 @@ export default function RagnarokAnalyticsPage() {
               </div>
             </section>
 
-            {/* Filtros tácticos y Picklist */}
-            <div className="filter-toolbar">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <input
-                  type="text"
-                  placeholder="Buscar # o nombre..."
-                  value={searchTeam}
-                  onChange={(e) => setSearchTeam(e.target.value)}
-                  className="input-rag tabular"
-                  style={{ width: '165px' }}
-                />
-
-                {(['ALL', 'BALANCÍN', 'FLOR', 'HÍBRIDO'] as const).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setRoleFilter(r)}
-                    className={`btn-ghost ${roleFilter === r ? 'active' : ''}`}
-                  >
-                    {r === 'ALL' ? 'Todos' : r}
-                  </button>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => setOnlyReliable(!onlyReliable)}
-                  className={`btn-ghost ${onlyReliable ? 'active' : ''}`}
-                >
-                  Op ≥ 70%
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnlyLowFouls(!onlyLowFouls)}
-                  className={`btn-ghost ${onlyLowFouls ? 'active' : ''}`}
-                >
-                  Faltas ≤ 15
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnlyWithPit(!onlyWithPit)}
-                  className={`btn-ghost ${onlyWithPit ? 'active' : ''}`}
-                >
-                  Con Pit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPrioritizeTop(!prioritizeTop)}
-                  className={`btn-ghost ${prioritizeTop ? 'active' : ''}`}
-                >
-                  ★ Favoritos primero
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHideDrafted(!hideDrafted)}
-                  className={`btn-ghost ${hideDrafted ? 'active' : ''}`}
-                >
-                  Ocultar Drafted
-                </button>
+            {/* Selector de Perfil de Clasificación + Filtros tácticos */}
+            <div className="filter-toolbar" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Clasificación:
+                  </span>
+                  {(Object.keys(SCORING_PROFILES) as ScoringProfileId[]).map((pid) => {
+                    const prof = SCORING_PROFILES[pid];
+                    return (
+                      <button
+                        key={pid}
+                        type="button"
+                        onClick={() => setScoringProfile(pid)}
+                        className={`btn-ghost ${scoringProfile === pid ? 'active' : ''}`}
+                        title={prof.description}
+                      >
+                        {prof.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {SCORING_PROFILES[scoringProfile].description}
+                </span>
               </div>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                Toca Tag para marcar ★ TOP / DRAFTED • Clic en fila abre perfil
-              </span>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid var(--border-steel)', paddingTop: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    placeholder="Buscar # o nombre..."
+                    value={searchTeam}
+                    onChange={(e) => setSearchTeam(e.target.value)}
+                    className="input-rag tabular"
+                    style={{ width: '155px' }}
+                  />
+
+                  <select
+                    value={robotTypeFilter}
+                    onChange={(e) => setRobotTypeFilter(e.target.value)}
+                    className="select-rag"
+                    title="Filtrar por Tipo de Robot (Pit)"
+                  >
+                    <option value="ALL">Tipo: Todos</option>
+                    {Array.from(
+                      new Set([
+                        'Torreta',
+                        'Dumper',
+                        'Shooter fijo',
+                        'Brazo / Elevador',
+                        'Defensa / Pushbot',
+                        'Híbrido',
+                        ...availableRobotTypes,
+                      ])
+                    ).map((rt) => (
+                      <option key={rt} value={rt}>
+                        Tipo: {rt}
+                      </option>
+                    ))}
+                  </select>
+
+                  {(['ALL', 'BALANCÍN', 'FLOR', 'HÍBRIDO'] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setRoleFilter(r)}
+                      className={`btn-ghost ${roleFilter === r ? 'active' : ''}`}
+                    >
+                      {r === 'ALL' ? 'Todos' : r}
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setOnlyReliable(!onlyReliable)}
+                    className={`btn-ghost ${onlyReliable ? 'active' : ''}`}
+                  >
+                    Op ≥ 70%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyLowFouls(!onlyLowFouls)}
+                    className={`btn-ghost ${onlyLowFouls ? 'active' : ''}`}
+                  >
+                    Faltas ≤ 15
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyWithPit(!onlyWithPit)}
+                    className={`btn-ghost ${onlyWithPit ? 'active' : ''}`}
+                  >
+                    Con Pit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrioritizeTop(!prioritizeTop)}
+                    className={`btn-ghost ${prioritizeTop ? 'active' : ''}`}
+                  >
+                    ★ Favoritos primero
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHideDrafted(!hideDrafted)}
+                    className={`btn-ghost ${hideDrafted ? 'active' : ''}`}
+                  >
+                    Ocultar Drafted
+                  </button>
+                </div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                  Toca Tag para marcar ★ TOP / DRAFTED • Clic en fila abre perfil
+                </span>
+              </div>
             </div>
 
             {/* Tabla Maestra */}
@@ -900,12 +1020,14 @@ export default function RagnarokAnalyticsPage() {
                     {[
                       { k: 'rank', l: 'Rank' },
                       { k: 'team', l: 'Equipo' },
+                      { k: 'classScore', l: 'Tier / Score' },
                     ].map((col) => (
                       <th key={col.k} onClick={() => handleSort(col.k as SortKey)}>
                         {col.l} {sortKey === col.k ? (sortAsc ? '▲' : '▼') : ''}
                       </th>
                     ))}
                     <th>Rol</th>
+                    <th>Tipo</th>
                     <th>Pit</th>
                     {[
                       { k: 'matchesPlayed', l: 'PJ' },
@@ -926,13 +1048,27 @@ export default function RagnarokAnalyticsPage() {
                         {col.l} {sortKey === col.k ? (sortAsc ? '▲' : '▼') : ''}
                       </th>
                     ))}
+                    {hasOprDpr &&
+                      [
+                        { k: 'opr', l: 'OPR (#Off)' },
+                        { k: 'dpr', l: 'DPR (#Def)' },
+                        { k: 'ccwm', l: 'CCWM' },
+                        { k: 'rankCombAvg', l: 'Prom OPR/DPR' },
+                      ].map((col) => (
+                        <th key={col.k} onClick={() => handleSort(col.k as SortKey)}>
+                          {col.l} {sortKey === col.k ? (sortAsc ? '▲' : '▼') : ''}
+                        </th>
+                      ))}
                     {timestoneData?.available && <th title="EPA ponderado Timestone (y EPA Operativo)">EPA Sim.</th>}
                   </tr>
                 </thead>
                 <tbody className="tabular">
                   {filteredTeams.length === 0 ? (
                     <tr>
-                      <td colSpan={timestoneData?.available ? 19 : 18} style={{ padding: '28px', color: 'var(--text-muted)' }}>
+                      <td
+                        colSpan={20 + (hasOprDpr ? 4 : 0) + (timestoneData?.available ? 1 : 0)}
+                        style={{ padding: '28px', color: 'var(--text-muted)' }}
+                      >
                         {loading ? 'Cargando datos...' : 'Sin equipos que coincidan con el filtro.'}
                       </td>
                     </tr>
@@ -941,6 +1077,7 @@ export default function RagnarokAnalyticsPage() {
                       const roleMeta = detectRobotRole(t);
                       const tag = pickTags[t.team] || 'none';
                       const tagMeta = PICK_TAG_META[tag];
+                      const cls = classificationByTeam.get(t.team);
 
                       return (
                         <tr key={t.team} className={tag === 'drafted' ? 'drafted-row' : undefined} onClick={() => openTeamProfile(t.team)}>
@@ -980,6 +1117,27 @@ export default function RagnarokAnalyticsPage() {
                             )}
                           </td>
                           <td>
+                            {cls && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  background: cls.tierBg,
+                                  border: `1px solid ${cls.tierColor}55`,
+                                  color: cls.tierColor,
+                                  borderRadius: '3px',
+                                  padding: '2px 6px',
+                                  fontSize: '10.5px',
+                                  fontWeight: 900,
+                                }}
+                              >
+                                <span>{cls.tier}</span>
+                                <span style={{ color: 'var(--text-white)', fontWeight: 800 }}>{cls.score.toFixed(0)}</span>
+                              </span>
+                            )}
+                          </td>
+                          <td>
                             <span
                               style={{
                                 background: roleMeta.bg,
@@ -993,6 +1151,9 @@ export default function RagnarokAnalyticsPage() {
                             >
                               {roleMeta.role}
                             </span>
+                          </td>
+                          <td style={{ fontSize: '11px', color: t.pit?.robotType ? 'var(--accent-amber)' : 'var(--text-muted)', fontWeight: t.pit?.robotType ? 700 : 500 }}>
+                            {t.pit?.robotType || '—'}
                           </td>
                           <td>
                             {t.pit ? (
@@ -1041,6 +1202,58 @@ export default function RagnarokAnalyticsPage() {
                           </td>
                           <td>{t.driverAvg.toFixed(1)}</td>
                           <td style={{ color: 'var(--accent-amber)' }}>{t.maxNet}</td>
+                          {hasOprDpr && (
+                            <>
+                              <td style={{ color: '#7DD3FC', fontWeight: 800 }}>
+                                {t.timestone?.opr !== null && t.timestone?.opr !== undefined ? (
+                                  <>
+                                    {t.timestone.opr.toFixed(1)}
+                                    {t.timestone.rankOff ? (
+                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                                        (#{t.timestone.rankOff})
+                                      </span>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td style={{ color: '#34D399', fontWeight: 800 }}>
+                                {t.timestone?.dpr !== null && t.timestone?.dpr !== undefined ? (
+                                  <>
+                                    {t.timestone.dpr.toFixed(1)}
+                                    {t.timestone.rankDef ? (
+                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                                        (#{t.timestone.rankDef})
+                                      </span>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td
+                                style={{
+                                  fontWeight: 800,
+                                  color:
+                                    t.timestone?.ccwm !== null && t.timestone?.ccwm !== undefined
+                                      ? t.timestone.ccwm >= 0
+                                        ? 'var(--accent-amber)'
+                                        : 'var(--rag-coral)'
+                                      : 'var(--text-muted)',
+                                }}
+                              >
+                                {t.timestone?.ccwm !== null && t.timestone?.ccwm !== undefined
+                                  ? `${t.timestone.ccwm >= 0 ? '+' : ''}${t.timestone.ccwm.toFixed(1)}`
+                                  : '—'}
+                              </td>
+                              <td style={{ color: 'var(--text-silver)', fontWeight: 800 }}>
+                                {t.timestone?.rankCombAvg !== null && t.timestone?.rankCombAvg !== undefined
+                                  ? `#${t.timestone.rankCombAvg.toFixed(1)}`
+                                  : '—'}
+                              </td>
+                            </>
+                          )}
                           {timestoneData?.available && (
                             <td
                               title={
@@ -1303,7 +1516,28 @@ export default function RagnarokAnalyticsPage() {
                           leftTitle={`#${selectedTeam.team}`}
                           rightTitle={`#${compareTeam.team}`}
                           metrics={[
+                            {
+                              label: `Score (${SCORING_PROFILES[scoringProfile].shortLabel})`,
+                              leftVal: classificationByTeam.get(selectedTeam.team)?.score ?? 0,
+                              rightVal: classificationByTeam.get(compareTeam.team)?.score ?? 0,
+                            },
                             { label: 'EPA Neto', leftVal: selectedTeam.epaNetAvg, rightVal: compareTeam.epaNetAvg },
+                            ...(selectedTeam.timestone?.opr != null && compareTeam.timestone?.opr != null
+                              ? [
+                                  { label: 'OPR', leftVal: selectedTeam.timestone.opr, rightVal: compareTeam.timestone.opr },
+                                  {
+                                    label: 'DPR (menor=mejor)',
+                                    leftVal: selectedTeam.timestone.dpr ?? 0,
+                                    rightVal: compareTeam.timestone.dpr ?? 0,
+                                    lowerIsBetter: true,
+                                  },
+                                  {
+                                    label: 'CCWM (OPR−DPR)',
+                                    leftVal: selectedTeam.timestone.ccwm ?? 0,
+                                    rightVal: compareTeam.timestone.ccwm ?? 0,
+                                  },
+                                ]
+                              : []),
                             { label: 'Auto Prom', leftVal: selectedTeam.autoAvg, rightVal: compareTeam.autoAvg },
                             { label: 'TeleOp Prom', leftVal: selectedTeam.teleAvg, rightVal: compareTeam.teleAvg },
                             {
@@ -1321,6 +1555,145 @@ export default function RagnarokAnalyticsPage() {
                         <PitComparePanel left={selectedTeam} right={compareTeam} />
                       </>
                     )}
+
+                    {/* Panel de Clasificación por Características & OPR/DPR */}
+                    {(() => {
+                      const cls = classificationByTeam.get(selectedTeam.team);
+                      if (!cls) return null;
+                      const tsMetric = selectedTeam.timestone;
+                      const hasTeamOpr = tsMetric?.opr !== null && tsMetric?.opr !== undefined;
+                      const charBars: { label: string; val: number; color: string }[] = [
+                        { label: 'Ofensiva (EPA/OPR)', val: cls.breakdown.offensive, color: 'var(--bey-purple)' },
+                        { label: 'Defensa (DPR/Garden)', val: cls.breakdown.defensive, color: 'var(--accent-emerald)' },
+                        { label: 'Autónomo', val: cls.breakdown.auto, color: 'var(--accent-cyan)' },
+                        { label: 'Confiabilidad', val: cls.breakdown.reliability, color: '#60A5FA' },
+                        { label: 'Disciplina', val: cls.breakdown.discipline, color: 'var(--accent-amber)' },
+                        { label: 'Piloto', val: cls.breakdown.driver, color: '#FB7185' },
+                      ];
+
+                      return (
+                        <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          <div className="panel-header" style={{ marginBottom: 0, flexWrap: 'wrap', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <span className="panel-title">Clasificación por Características &amp; OPR/DPR</span>
+                              <span
+                                className="tabular"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  background: cls.tierBg,
+                                  border: `1px solid ${cls.tierColor}66`,
+                                  color: cls.tierColor,
+                                  borderRadius: '4px',
+                                  padding: '3px 9px',
+                                  fontSize: '12px',
+                                  fontWeight: 900,
+                                }}
+                              >
+                                Tier {cls.tier} • {cls.score.toFixed(1)}/100
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                              {(Object.keys(SCORING_PROFILES) as ScoringProfileId[]).map((pid) => (
+                                <button
+                                  key={pid}
+                                  type="button"
+                                  onClick={() => setScoringProfile(pid)}
+                                  className={`btn-ghost ${scoringProfile === pid ? 'active' : ''}`}
+                                  style={{ padding: '4px 8px', fontSize: '10.5px' }}
+                                >
+                                  {SCORING_PROFILES[pid].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {hasTeamOpr && tsMetric && (
+                            <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
+                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                  OPR (Ofensivo)
+                                </div>
+                                <div style={{ fontSize: '18px', fontWeight: 900, color: '#7DD3FC', marginTop: '2px' }}>
+                                  {tsMetric.opr!.toFixed(1)}
+                                  {tsMetric.rankOff ? (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                                      #{tsMetric.rankOff}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                  DPR (Defensivo)
+                                </div>
+                                <div style={{ fontSize: '18px', fontWeight: 900, color: '#34D399', marginTop: '2px' }}>
+                                  {tsMetric.dpr!.toFixed(1)}
+                                  {tsMetric.rankDef ? (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                                      #{tsMetric.rankDef}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                  CCWM (OPR − DPR)
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '18px',
+                                    fontWeight: 900,
+                                    color: (tsMetric.ccwm ?? 0) >= 0 ? 'var(--accent-amber)' : 'var(--rag-coral)',
+                                    marginTop: '2px',
+                                  }}
+                                >
+                                  {(tsMetric.ccwm ?? 0) >= 0 ? '+' : ''}
+                                  {(tsMetric.ccwm ?? 0).toFixed(1)}
+                                </div>
+                              </div>
+
+                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                                  Rank Prom. OPR/DPR
+                                </div>
+                                <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--text-white)', marginTop: '2px' }}>
+                                  {tsMetric.rankCombAvg != null ? `#${tsMetric.rankCombAvg.toFixed(1)}` : '—'}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                            {charBars.map((bar) => (
+                              <div
+                                key={bar.label}
+                                style={{
+                                  background: 'var(--bg-carbon)',
+                                  border: '1px solid var(--border-steel)',
+                                  borderRadius: '4px',
+                                  padding: '8px 10px',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '5px',
+                                }}
+                              >
+                                <div className="tabular" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800 }}>
+                                  <span style={{ color: 'var(--text-silver)' }}>{bar.label}</span>
+                                  <span style={{ color: bar.color }}>{bar.val}/100</span>
+                                </div>
+                                <div style={{ height: '6px', width: '100%', background: '#090A0F', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${bar.val}%`, background: bar.color }} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <TeamPitCard team={selectedTeam} />
 
@@ -1769,6 +2142,19 @@ export default function RagnarokAnalyticsPage() {
                 <span style={{ color: 'var(--accent-cyan)' }}>RIVAL: {oppAllianceProj.net.toFixed(1)}</span>
               </div>
             </div>
+
+            <AllianceMatchFinder
+              captain={teamMap.get(allyCap) || null}
+              allTeams={teams}
+              pickTags={pickTags}
+              rivalProjectedNet={oppAllianceProj.members.length > 0 ? oppAllianceProj.net : null}
+              selectedPick1={allyPick1}
+              selectedSub={allySub}
+              excludedRivalIds={[opp1, opp2, oppSub].filter(Boolean)}
+              onSelectPick1={setAllyPick1}
+              onSelectSub={setAllySub}
+              onOpenProfile={openTeamProfile}
+            />
 
             <div className="match-2col">
               {[

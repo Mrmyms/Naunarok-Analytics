@@ -319,3 +319,66 @@ class TestFTCScoutAndMonteCarloPipeline:
         assert alliance_score["auto_conflict"] == "SI"
         assert alliance_score["alliance_top_nectar"] == "SI"
         assert alliance_score["score_est_total"] > 20
+
+
+class TestOprDprEngine:
+    def test_compute_event_opr_dpr_exact_recovery(self):
+        # 4 equipos con OPR exactos [30, 20, 15, 10] y DPR exactos [5, 15, 20, 25]
+        # En cada match: Score propio = sum(OPR alianza), Score rival = sum(DPR alianza)
+        # Esperar 3 partidos linealmente independientes para determinar exactamente los 4 equipos
+        # M1: (1,2) vs (3,4) -> Red=50, Blue=25? Mejor usar DPR = puntos que permite la alianza:
+        # Si Red tiene equipos (1,2), permite sum(DPR_red) = 5+15 = 20 = BlueScore!
+        # Y si Blue tiene (3,4), suma OPR_blue = 25? Para que ambos sean consistentes:
+        # En M1 (1,2) vs (3,4): Red=50, Blue=25; M2 (1,3) vs (2,4): Red=45, Blue=30; M3 (1,4) vs (2,3): Red=40, Blue=35
+        # Verifiquemos: DPR equipo k = promedio permitido en sus partidos:
+        # Equipo 1 permite: 25 (con 2), 30 (con 3), 35 (con 4) -> promedio = 30
+        matches_df = pd.DataFrame([
+            {
+                "match_code": 1, "tournament_level": "Quals", "has_been_played": True,
+                "RED1": 1001, "RED2": 1002, "BLUE1": 1003, "BLUE2": 1004,
+                "actual_red_np": 50, "actual_blue_np": 25,
+                "actual_red_score": 50, "actual_blue_score": 25,
+            },
+            {
+                "match_code": 2, "tournament_level": "Quals", "has_been_played": True,
+                "RED1": 1001, "RED2": 1003, "BLUE1": 1002, "BLUE2": 1004,
+                "actual_red_np": 45, "actual_blue_np": 30,
+                "actual_red_score": 45, "actual_blue_score": 30,
+            },
+            {
+                "match_code": 3, "tournament_level": "Quals", "has_been_played": True,
+                "RED1": 1001, "RED2": 1004, "BLUE1": 1002, "BLUE2": 1003,
+                "actual_red_np": 40, "actual_blue_np": 35,
+                "actual_red_score": 40, "actual_blue_score": 35,
+            },
+        ])
+        od = ts.compute_event_opr_dpr(matches_df, [1001, 1002, 1003, 1004])
+        assert od[1001]["opr"] == pytest.approx(30.0, abs=0.05)
+        assert od[1002]["opr"] == pytest.approx(20.0, abs=0.05)
+        assert od[1003]["opr"] == pytest.approx(15.0, abs=0.05)
+        assert od[1004]["opr"] == pytest.approx(10.0, abs=0.05)
+
+        assert od[1001]["rank_off"] == 1
+        assert od[1004]["rank_off"] == 4
+        # Solución exacta: d1+d2=25, d1+d3=30, d1+d4=35, sum=75 -> d=[7.5, 17.5, 22.5, 27.5]
+        assert od[1001]["dpr"] == pytest.approx(7.5, abs=0.05)
+        assert od[1004]["dpr"] == pytest.approx(27.5, abs=0.05)
+        assert od[1001]["rank_def"] == 1
+        assert od[1001]["ccwm"] == pytest.approx(22.5, abs=0.05)
+        assert od[1001]["rank_comb_avg"] == 1.0
+
+        # Verificar columnas nuevas en ranking_df de build_export_tables
+        scouting_df = pd.DataFrame([_make_scouting_row(MATCH=1, EQUIPO=1001)])
+        teams_df = pd.DataFrame([{"Team ID": t, "Names": f"T{t}"} for t in (1001, 1002, 1003, 1004)])
+        ranking_df, *_ = ts.build_export_tables("MXTO", scouting_df, teams_df, matches_df, n_sims=50, seed=1)
+        for col in ("OPR", "DPR", "CCWM", "Rank_Ofensivo", "Rank_Defensivo", "Rank_OPR_DPR_Prom"):
+            assert col in ranking_df.columns
+
+    def test_compute_event_opr_dpr_empty_when_no_played_matches(self):
+        unplayed = pd.DataFrame([
+            {
+                "match_code": 1, "tournament_level": "Quals", "has_been_played": False,
+                "RED1": 1001, "RED2": 1002, "BLUE1": 1003, "BLUE2": 1004,
+            }
+        ])
+        assert ts.compute_event_opr_dpr(unplayed, [1001, 1002, 1003, 1004]) == {}

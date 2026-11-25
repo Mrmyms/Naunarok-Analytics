@@ -23,6 +23,7 @@ export function PitComparePanel({
   if (!lp && !rp) return null;
 
   const rows: { label: string; l: string; r: string }[] = [
+    { label: 'Tipo de Robot', l: lp?.robotType || '—', r: rp?.robotType || '—' },
     { label: 'Chasis', l: lp?.chassisType || '—', r: rp?.chassisType || '—' },
     {
       label: 'Peso',
@@ -146,7 +147,22 @@ export default function TeamPitCard({ team }: { team: TeamAnalytics }) {
               {pit.timestamp ? ` • ${pit.timestamp}` : ''}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {pit.robotType && (
+              <span
+                style={{
+                  background: 'rgba(255, 209, 102, 0.14)',
+                  border: '1px solid rgba(255, 209, 102, 0.45)',
+                  color: 'var(--accent-amber)',
+                  borderRadius: '4px',
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                }}
+              >
+                {pit.robotType}
+              </span>
+            )}
             {pit.preferredRole && (
               <span
                 style={{
@@ -289,6 +305,10 @@ export default function TeamPitCard({ team }: { team: TeamAnalytics }) {
               Hardware &amp; Mecánica
             </div>
             <div className="tabular" style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Tipo de Robot</span>
+                <strong style={{ color: 'var(--accent-amber)', textAlign: 'right' }}>{pit.robotType || '—'}</strong>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Chasis</span>
                 <strong style={{ color: 'var(--text-white)' }}>{pit.chassisType || '—'}</strong>
