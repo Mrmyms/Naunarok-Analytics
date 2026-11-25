@@ -5,6 +5,7 @@ import DistributionBars from '@/components/DistributionBars';
 import DuelComparisonBars from '@/components/DuelComparisonBars';
 import RagnarokFieldHeatmap, { FieldMarker } from '@/components/RagnarokFieldHeatmap';
 import TeamHistoricChart from '@/components/TeamHistoricChart';
+import TeamPitCard, { PitComparePanel } from '@/components/TeamPitCard';
 import TeamRadarChart from '@/components/TeamRadarChart';
 import {
   detectRobotRole,
@@ -47,6 +48,7 @@ export default function RagnarokAnalyticsPage() {
   const [roleFilter, setRoleFilter] = useState<'ALL' | RobotRole>('ALL');
   const [onlyReliable, setOnlyReliable] = useState(false);
   const [onlyLowFouls, setOnlyLowFouls] = useState(false);
+  const [onlyWithPit, setOnlyWithPit] = useState(false);
   const [hideDrafted, setHideDrafted] = useState(false);
   const [prioritizeTop, setPrioritizeTop] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('rank');
@@ -56,6 +58,7 @@ export default function RagnarokAnalyticsPage() {
   // Team Profile + 1v1 Compare state
   const [selectedTeamNum, setSelectedTeamNum] = useState<number>(0);
   const [compareTeamNum, setCompareTeamNum] = useState<number>(0);
+  const [profileSection, setProfileSection] = useState<'resumen' | 'graficas' | 'bitacora'>('resumen');
 
   // Match 2v2 Breakdown state
   const [matchNum, setMatchNum] = useState<number>(1);
@@ -351,12 +354,19 @@ export default function RagnarokAnalyticsPage() {
 
   const filteredTeams = useMemo(() => {
     const tagPriority: Record<PickTag, number> = { top: 0, pick: 1, none: 2, avoid: 3, drafted: 4 };
+    const q = searchTeam.trim().toLowerCase();
     return teams
       .filter((t) => {
-        if (searchTeam.trim() && !String(t.team).includes(searchTeam.trim())) return false;
+        if (q) {
+          const teamStr = String(t.team);
+          const pitName = (t.pit?.teamName || '').toLowerCase();
+          const tsName = (t.timestone?.name || '').toLowerCase();
+          if (!teamStr.includes(q) && !pitName.includes(q) && !tsName.includes(q)) return false;
+        }
         if (roleFilter !== 'ALL' && detectRobotRole(t).role !== roleFilter) return false;
         if (onlyReliable && t.reliabilityPct < 70) return false;
         if (onlyLowFouls && t.foulsAvg > 15) return false;
+        if (onlyWithPit && !t.pit) return false;
         if (hideDrafted && pickTags[t.team] === 'drafted') return false;
         return true;
       })
@@ -369,7 +379,7 @@ export default function RagnarokAnalyticsPage() {
         const diff = a[sortKey] - b[sortKey];
         return sortAsc ? diff : -diff;
       });
-  }, [teams, searchTeam, roleFilter, onlyReliable, onlyLowFouls, hideDrafted, prioritizeTop, pickTags, sortKey, sortAsc]);
+  }, [teams, searchTeam, roleFilter, onlyReliable, onlyLowFouls, onlyWithPit, hideDrafted, prioritizeTop, pickTags, sortKey, sortAsc]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -795,7 +805,7 @@ export default function RagnarokAnalyticsPage() {
               <div className="kpi-card">
                 <span className="kpi-label">Equipos Activos</span>
                 <span className="kpi-value tabular">{payload?.teamsCount ?? 0}</span>
-                <span className="kpi-sub">Con telemetría evaluada</span>
+                <span className="kpi-sub tabular">{payload?.pitCount ?? 0} con Pit Scouting</span>
               </div>
               <div className="kpi-card" style={{ borderTopColor: 'var(--accent-amber)' }}>
                 <span className="kpi-label">Líder EPA Neto</span>
@@ -822,11 +832,11 @@ export default function RagnarokAnalyticsPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 <input
                   type="text"
-                  placeholder="Buscar # equipo..."
+                  placeholder="Buscar # o nombre..."
                   value={searchTeam}
                   onChange={(e) => setSearchTeam(e.target.value)}
                   className="input-rag tabular"
-                  style={{ width: '145px' }}
+                  style={{ width: '165px' }}
                 />
 
                 {(['ALL', 'BALANCÍN', 'FLOR', 'HÍBRIDO'] as const).map((r) => (
@@ -853,6 +863,13 @@ export default function RagnarokAnalyticsPage() {
                   className={`btn-ghost ${onlyLowFouls ? 'active' : ''}`}
                 >
                   Faltas ≤ 15
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnlyWithPit(!onlyWithPit)}
+                  className={`btn-ghost ${onlyWithPit ? 'active' : ''}`}
+                >
+                  Con Pit
                 </button>
                 <button
                   type="button"
@@ -889,6 +906,7 @@ export default function RagnarokAnalyticsPage() {
                       </th>
                     ))}
                     <th>Rol</th>
+                    <th>Pit</th>
                     {[
                       { k: 'matchesPlayed', l: 'PJ' },
                       { k: 'epaNetAvg', l: 'EPA Neto' },
@@ -914,7 +932,7 @@ export default function RagnarokAnalyticsPage() {
                 <tbody className="tabular">
                   {filteredTeams.length === 0 ? (
                     <tr>
-                      <td colSpan={timestoneData?.available ? 18 : 17} style={{ padding: '28px', color: 'var(--text-muted)' }}>
+                      <td colSpan={timestoneData?.available ? 19 : 18} style={{ padding: '28px', color: 'var(--text-muted)' }}>
                         {loading ? 'Cargando datos...' : 'Sin equipos que coincidan con el filtro.'}
                       </td>
                     </tr>
@@ -953,7 +971,14 @@ export default function RagnarokAnalyticsPage() {
                           <td style={{ fontWeight: 900, color: t.rank === 1 ? 'var(--accent-amber)' : 'var(--text-muted)' }}>
                             #{t.rank}
                           </td>
-                          <td style={{ fontWeight: 900, color: '#FFFFFF' }}>#{t.team}</td>
+                          <td style={{ fontWeight: 900, color: '#FFFFFF' }}>
+                            #{t.team}
+                            {(t.pit?.teamName || t.timestone?.name) && (
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, marginLeft: '5px' }}>
+                                {t.pit?.teamName || t.timestone?.name}
+                              </span>
+                            )}
+                          </td>
                           <td>
                             <span
                               style={{
@@ -968,6 +993,26 @@ export default function RagnarokAnalyticsPage() {
                             >
                               {roleMeta.role}
                             </span>
+                          </td>
+                          <td>
+                            {t.pit ? (
+                              <span
+                                style={{
+                                  background: 'rgba(16, 185, 129, 0.14)',
+                                  color: 'var(--accent-emerald)',
+                                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                                  borderRadius: '3px',
+                                  padding: '2px 6px',
+                                  fontSize: '9.5px',
+                                  fontWeight: 800,
+                                }}
+                                title={`${t.pit.chassisType || 'Pit'} • ${t.pit.photos.length} foto(s)`}
+                              >
+                                Pit ✓{t.pit.photos.length > 0 ? ` · ${t.pit.photos.length}📷` : ''}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>—</span>
+                            )}
                           </td>
                           <td>{t.matchesPlayed}</td>
                           <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{t.epaNetAvg.toFixed(1)}</td>
@@ -1032,87 +1077,213 @@ export default function RagnarokAnalyticsPage() {
         {/* ================= 2. PERFIL DE EQUIPO ================= */}
         {tab === 'equipo' && (
           <>
-            <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <button type="button" onClick={() => stepSelectedTeam(-1)} className="btn-ghost" aria-label="Equipo anterior">
-                  ‹
-                </button>
-                <select
-                  value={selectedTeam?.team ?? ''}
-                  onChange={(e) => setSelectedTeamNum(Number(e.target.value))}
-                  className="select-rag tabular"
-                >
-                  {teams.map((t) => (
-                    <option key={t.team} value={t.team}>
-                      #{t.team} (Rank #{t.rank} • EPA {t.epaNetAvg.toFixed(1)})
-                    </option>
-                  ))}
-                </select>
-                <button type="button" onClick={() => stepSelectedTeam(1)} className="btn-ghost" aria-label="Equipo siguiente">
-                  ›
-                </button>
+            {/* Header Estructurado de Equipo */}
+            <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Fila 1: Selector, Comparador, Rol y Picklist */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => stepSelectedTeam(-1)} className="btn-ghost" aria-label="Equipo anterior">
+                    ‹
+                  </button>
+                  <select
+                    value={selectedTeam?.team ?? ''}
+                    onChange={(e) => setSelectedTeamNum(Number(e.target.value))}
+                    className="select-rag tabular"
+                  >
+                    {teams.map((t) => {
+                      const labelName = t.pit?.teamName || t.timestone?.name;
+                      return (
+                        <option key={t.team} value={t.team}>
+                          #{t.team}{labelName ? ` • ${labelName}` : ''} (Rank #{t.rank} • EPA {t.epaNetAvg.toFixed(1)}{t.pit ? ' • Pit ✓' : ''})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <button type="button" onClick={() => stepSelectedTeam(1)} className="btn-ghost" aria-label="Equipo siguiente">
+                    ›
+                  </button>
 
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, marginLeft: '6px' }}>vs:</span>
-                <select
-                  value={compareTeamNum}
-                  onChange={(e) => setCompareTeamNum(Number(e.target.value))}
-                  className="select-rag tabular"
-                >
-                  <option value={0}>Comparar con...</option>
-                  {teams
-                    .filter((t) => t.team !== selectedTeam?.team)
-                    .map((t) => (
-                      <option key={t.team} value={t.team}>
-                        #{t.team} (EPA {t.epaNetAvg.toFixed(1)})
-                      </option>
-                    ))}
-                </select>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, marginLeft: '6px' }}>vs:</span>
+                  <select
+                    value={compareTeamNum}
+                    onChange={(e) => setCompareTeamNum(Number(e.target.value))}
+                    className="select-rag tabular"
+                  >
+                    <option value={0}>Comparar con...</option>
+                    {teams
+                      .filter((t) => t.team !== selectedTeam?.team)
+                      .map((t) => (
+                        <option key={t.team} value={t.team}>
+                          #{t.team}{t.pit?.teamName ? ` • ${t.pit.teamName}` : ''} (EPA {t.epaNetAvg.toFixed(1)})
+                        </option>
+                      ))}
+                  </select>
+                  {compareTeam && (
+                    <button
+                      type="button"
+                      onClick={() => setCompareTeamNum(0)}
+                      className="btn-ghost"
+                      title="Quitar comparación 1v1"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {selectedTeam && (
+                  <div className="tabular" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {(() => {
+                      const roleMeta = detectRobotRole(selectedTeam);
+                      const tagMeta = PICK_TAG_META[pickTags[selectedTeam.team] || 'none'];
+                      return (
+                        <>
+                          <span
+                            style={{
+                              background: roleMeta.bg,
+                              color: roleMeta.color,
+                              border: `1px solid ${roleMeta.color}44`,
+                              borderRadius: '4px',
+                              padding: '4px 8px',
+                              fontSize: '10.5px',
+                              fontWeight: 800,
+                            }}
+                          >
+                            {roleMeta.role}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => cyclePickTag(selectedTeam.team)}
+                            style={{
+                              background: tagMeta.bg,
+                              border: `1px solid ${tagMeta.border}`,
+                              color: tagMeta.color,
+                              borderRadius: '4px',
+                              padding: '4px 9px',
+                              fontSize: '10.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Tag: {tagMeta.label}
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
+              {/* Fila 2: 5 KPIs clave del equipo */}
               {selectedTeam && (
-                <div className="tabular" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', fontSize: '12px', fontWeight: 800 }}>
-                  {(() => {
-                    const roleMeta = detectRobotRole(selectedTeam);
-                    const tagMeta = PICK_TAG_META[pickTags[selectedTeam.team] || 'none'];
-                    return (
-                      <>
-                        <span
-                          style={{
-                            background: roleMeta.bg,
-                            color: roleMeta.color,
-                            border: `1px solid ${roleMeta.color}44`,
-                            borderRadius: '4px',
-                            padding: '3px 8px',
-                            fontSize: '10px',
-                          }}
-                        >
-                          {roleMeta.role}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => cyclePickTag(selectedTeam.team)}
-                          style={{
-                            background: tagMeta.bg,
-                            border: `1px solid ${tagMeta.border}`,
-                            color: tagMeta.color,
-                            borderRadius: '4px',
-                            padding: '4px 8px',
-                            fontSize: '10px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Tag: {tagMeta.label}
-                        </button>
-                      </>
-                    );
-                  })()}
-                  <span>RANK <strong style={{ color: 'var(--accent-amber)' }}>#{selectedTeam.rank}</strong></span>
-                  <span>PJ <strong>{selectedTeam.matchesPlayed}</strong></span>
-                  <span>EPA <strong style={{ color: 'var(--bey-purple)' }}>{selectedTeam.epaNetAvg.toFixed(1)}</strong></span>
-                  <span>RANGO <strong>{selectedTeam.minNet}–{selectedTeam.maxNet}</strong></span>
-                  <span>OP <strong style={{ color: selectedTeam.reliabilityPct >= 90 ? 'var(--accent-emerald)' : 'var(--rag-coral)' }}>{selectedTeam.reliabilityPct.toFixed(0)}%</strong></span>
-                  <span>PILOTO <strong style={{ color: 'var(--accent-amber)' }}>{selectedTeam.driverAvg.toFixed(1)}/5</strong></span>
+                <div className="profile-kpi-strip tabular">
+                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                      EPA Neto (Rank #{selectedTeam.rank})
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--bey-purple)', marginTop: '2px' }}>
+                      {selectedTeam.epaNetAvg.toFixed(1)} pts
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                      Rango {selectedTeam.minNet}–{selectedTeam.maxNet} • {selectedTeam.matchesPlayed} PJ
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                      Auto / TeleOp
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--accent-cyan)', marginTop: '3px' }}>
+                      {selectedTeam.autoAvg.toFixed(1)} <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>/</span>{' '}
+                      <span style={{ color: 'var(--accent-amber)' }}>{selectedTeam.teleAvg.toFixed(1)}</span>
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                      Bal {(selectedTeam.balancinAutoAvg + selectedTeam.balancinTeleAvg).toFixed(1)} • Flor {selectedTeam.florAvg.toFixed(1)}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                      Confiabilidad
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '20px',
+                        fontWeight: 900,
+                        color: selectedTeam.reliabilityPct >= 90 ? 'var(--accent-emerald)' : selectedTeam.reliabilityPct < 70 ? 'var(--rag-coral)' : 'var(--text-white)',
+                        marginTop: '2px',
+                      }}
+                    >
+                      {selectedTeam.reliabilityPct.toFixed(0)}%
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: selectedTeam.foulsAvg > 15 ? 'var(--rag-coral)' : 'var(--text-muted)' }}>
+                      Faltas prom: {selectedTeam.foulsAvg.toFixed(1)} pts
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                      Piloto &amp; Swarm
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--accent-amber)', marginTop: '2px' }}>
+                      {selectedTeam.driverAvg.toFixed(1)} / 5
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                      Swarm prom: {selectedTeam.swarmPtsAvg.toFixed(1)} pts
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                      Pit &amp; Fotos
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '16px',
+                        fontWeight: 900,
+                        color: selectedTeam.pit ? 'var(--accent-emerald)' : 'var(--text-muted)',
+                        marginTop: '4px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {selectedTeam.pit ? selectedTeam.pit.chassisType || 'Pit ✓' : 'Sin Pit'}
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                      {selectedTeam.pit
+                        ? `${selectedTeam.pit.photos.length} foto${selectedTeam.pit.photos.length === 1 ? '' : 's'} • ${selectedTeam.pit.weightLb !== null ? `${selectedTeam.pit.weightLb} lb` : 'peso —'}`
+                        : 'Sin ficha registrada'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Fila 3: Sub-pestañas del Perfil */}
+              {selectedTeam && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div className="profile-subtabs" role="tablist" aria-label="Secciones del perfil de equipo">
+                    {(
+                      [
+                        { id: 'resumen', label: 'Resumen & Pit' },
+                        { id: 'graficas', label: 'Gráficas & Cancha' },
+                        { id: 'bitacora', label: `Bitácora (${selectedTeam.history.length})` },
+                      ] as const
+                    ).map((sec) => (
+                      <button
+                        key={sec.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={profileSection === sec.id}
+                        onClick={() => setProfileSection(sec.id)}
+                        className={`nav-tab ${profileSection === sec.id ? 'active' : ''}`}
+                      >
+                        {sec.label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                    Zona favorita Auto: <strong style={{ color: 'var(--text-white)' }}>{selectedTeam.topStartPos}</strong>
+                  </span>
                 </div>
               )}
             </div>
@@ -1123,86 +1294,249 @@ export default function RagnarokAnalyticsPage() {
               </div>
             ) : (
               <>
-                <div className="split-2col">
-                  {/* Columna Izquierda: Radar + Distribuciones + Tasas + Notas */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div className="panel">
-                      <div className="panel-header">
-                        <span className="panel-title">Perfil de Capacidades BIOBUZZ (Radar)</span>
-                        {compareTeam && (
-                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 800 }}>
-                            Comparando vs #{compareTeam.team}
+                {/* SECCIÓN 1: RESUMEN & PIT */}
+                {profileSection === 'resumen' && (
+                  <>
+                    {compareTeam && (
+                      <>
+                        <DuelComparisonBars
+                          leftTitle={`#${selectedTeam.team}`}
+                          rightTitle={`#${compareTeam.team}`}
+                          metrics={[
+                            { label: 'EPA Neto', leftVal: selectedTeam.epaNetAvg, rightVal: compareTeam.epaNetAvg },
+                            { label: 'Auto Prom', leftVal: selectedTeam.autoAvg, rightVal: compareTeam.autoAvg },
+                            { label: 'TeleOp Prom', leftVal: selectedTeam.teleAvg, rightVal: compareTeam.teleAvg },
+                            {
+                              label: 'Balancín Total',
+                              leftVal: selectedTeam.balancinAutoAvg + selectedTeam.balancinTeleAvg,
+                              rightVal: compareTeam.balancinAutoAvg + compareTeam.balancinTeleAvg,
+                            },
+                            { label: 'Flor Total', leftVal: selectedTeam.florAvg, rightVal: compareTeam.florAvg },
+                            { label: 'Garden Prom', leftVal: selectedTeam.gardenAvg, rightVal: compareTeam.gardenAvg },
+                            { label: 'Confiabilidad', leftVal: selectedTeam.reliabilityPct, rightVal: compareTeam.reliabilityPct, unit: '%' },
+                            { label: 'Faltas Prom', leftVal: selectedTeam.foulsAvg, rightVal: compareTeam.foulsAvg, lowerIsBetter: true },
+                            { label: 'Piloto (1–5)', leftVal: selectedTeam.driverAvg, rightVal: compareTeam.driverAvg },
+                          ]}
+                        />
+                        <PitComparePanel left={selectedTeam} right={compareTeam} />
+                      </>
+                    )}
+
+                    <TeamPitCard team={selectedTeam} />
+
+                    <div className="split-2col">
+                      <div className="panel">
+                        <div className="panel-header">
+                          <span className="panel-title">Eficiencia, RP &amp; Confiabilidad</span>
+                        </div>
+                        <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '12px' }}>
+                          {[
+                            { l: 'Auto [Min·Prom·Max]', v: `${selectedTeam.minAuto} · ${selectedTeam.autoAvg.toFixed(1)} · ${selectedTeam.maxAuto}`, c: '#FAFAFA' },
+                            { l: 'Tele [Min·Prom·Max]', v: `${selectedTeam.minTele} · ${selectedTeam.teleAvg.toFixed(1)} · ${selectedTeam.maxTele}`, c: '#FAFAFA' },
+                            { l: 'Neto [Min·Prom·Max]', v: `${selectedTeam.minNet} · ${selectedTeam.epaNetAvg.toFixed(1)} · ${selectedTeam.maxNet}`, c: '#FFD166' },
+                          ].map((rng) => (
+                            <div key={rng.l} style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '8px 10px' }}>
+                              <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: 700 }}>{rng.l}</div>
+                              <div style={{ fontSize: '13px', fontWeight: 900, color: rng.c, marginTop: '2px' }}>[ {rng.v} ]</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+                          {[
+                            { l: 'Auto Leave', v: `${selectedTeam.autoLeavePct.toFixed(0)}%`, c: '#94A3B8' },
+                            { l: 'Auto Park', v: `${selectedTeam.autoParkPct.toFixed(0)}%`, c: '#94A3B8' },
+                            { l: 'Endgame Park', v: `${selectedTeam.endgameParkPct.toFixed(0)}%`, c: '#FFD166' },
+                            { l: 'Control Flor', v: `${selectedTeam.flowerControlPct.toFixed(0)}% · ${selectedTeam.flowersOwnedAvg.toFixed(1)} fl.`, c: '#FB7185' },
+                            { l: 'Bottom Nectar', v: `${selectedTeam.bottomNectarPct.toFixed(0)}%`, c: '#F87171' },
+                            { l: 'Descore Garden', v: `${selectedTeam.gardenDescorePct.toFixed(0)}%`, c: '#34D399' },
+                          ].map((m) => (
+                            <div
+                              key={m.l}
+                              style={{
+                                background: 'var(--bg-carbon)',
+                                border: '1px solid var(--border-steel)',
+                                borderRadius: '4px',
+                                padding: '10px',
+                              }}
+                            >
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{m.l}</div>
+                              <div style={{ fontSize: '18px', fontWeight: 900, color: m.c }}>{m.v}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="panel">
+                        <div className="panel-header">
+                          <span className="panel-title">Notas de Scouters &amp; Alertas</span>
+                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                            {selectedTeam.notes.length} notas
                           </span>
+                        </div>
+                        {selectedTeam.notes.length === 0 ? (
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sin observaciones ni fallas reportadas.</div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
+                            {selectedTeam.notes.map((n, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  background: 'var(--bg-carbon)',
+                                  border: '1px solid var(--border-steel)',
+                                  borderLeft: `3px solid ${n.status === '100% Operativo' ? 'var(--bey-indigo)' : 'var(--accent-amber)'}`,
+                                  borderRadius: '4px',
+                                  padding: '8px 10px',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                <div className="tabular" style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                                  Match #{n.match} ({n.alliance}) • {n.scouter} • {n.status}
+                                </div>
+                                {n.note && <div style={{ color: 'var(--text-white)', marginTop: '3px' }}>{n.note}</div>}
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
-                      <TeamRadarChart team={selectedTeam} compareTeam={compareTeam} allTeams={teams} />
+                    </div>
+                  </>
+                )}
+
+                {/* SECCIÓN 2: GRÁFICAS & CANCHA */}
+                {profileSection === 'graficas' && (
+                  <div className="split-2col">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div className="panel">
+                        <div className="panel-header">
+                          <span className="panel-title">Perfil de Capacidades BIOBUZZ (Radar)</span>
+                          {compareTeam && (
+                            <span className="tabular" style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 800 }}>
+                              Comparando vs #{compareTeam.team}
+                            </span>
+                          )}
+                        </div>
+                        <TeamRadarChart team={selectedTeam} compareTeam={compareTeam} allTeams={teams} />
+                      </div>
+
+                      <div className="panel">
+                        <div className="panel-header">
+                          <span className="panel-title">Distribuciones de Piezas (Balancín vs Flor)</span>
+                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                            Prom. por match
+                          </span>
+                        </div>
+                        <DistributionBars
+                          autoBalPollen={selectedTeam.autoHivePollenAvg}
+                          autoBalNectar={selectedTeam.autoHiveNectarAvg}
+                          autoFlorPollen={selectedTeam.autoFlowerPollenAvg}
+                          autoFlorNectar={selectedTeam.autoFlowerNectarAvg}
+                          teleBalPollen={selectedTeam.teleHivePollenAvg}
+                          teleBalNectar={selectedTeam.teleHiveNectarAvg}
+                          teleFlorPollen={selectedTeam.teleFlowerPollenAvg}
+                          teleFlorNectar={selectedTeam.teleFlowerNectarAvg}
+                          gardenAvg={selectedTeam.gardenAvg}
+                        />
+                      </div>
                     </div>
 
-                    <div className="panel">
-                      <div className="panel-header">
-                        <span className="panel-title">Distribuciones de Piezas (Balancín vs Flor)</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div className="panel">
+                        <div className="panel-header">
+                          <span className="panel-title">HISTORIC • Tendencia por Partido</span>
+                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--accent-amber)', fontWeight: 700 }}>
+                            Swarm Prom: {selectedTeam.swarmPtsAvg.toFixed(1)} pts
+                          </span>
+                        </div>
+                        <TeamHistoricChart history={selectedTeam.history} />
+                      </div>
+
+                      <div className="panel">
+                        <div className="panel-header">
+                          <span className="panel-title">POSITIONS • Zonas de Inicio (6×6 BIOBUZZ)</span>
+                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-silver)', fontWeight: 700 }}>
+                            Favorita: {selectedTeam.topStartPos}
+                          </span>
+                        </div>
+                        <RagnarokFieldHeatmap
+                          positions={selectedTeam.positions}
+                          sidePositions={selectedTeam.sidePositions}
+                          teamNumber={selectedTeam.team}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SECCIÓN 3: BITÁCORA DE PARTIDOS */}
+                {profileSection === 'bitacora' && (
+                  <>
+                    <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+                      <div className="panel-header" style={{ padding: '14px 16px', marginBottom: 0 }}>
+                        <span className="panel-title">Bitácora de Partidos (#{selectedTeam.team})</span>
                         <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                          Prom. por match
+                          {selectedTeam.history.length} registros
                         </span>
                       </div>
-                      <DistributionBars
-                        autoBalPollen={selectedTeam.autoHivePollenAvg}
-                        autoBalNectar={selectedTeam.autoHiveNectarAvg}
-                        autoFlorPollen={selectedTeam.autoFlowerPollenAvg}
-                        autoFlorNectar={selectedTeam.autoFlowerNectarAvg}
-                        teleBalPollen={selectedTeam.teleHivePollenAvg}
-                        teleBalNectar={selectedTeam.teleHiveNectarAvg}
-                        teleFlorPollen={selectedTeam.teleFlowerPollenAvg}
-                        teleFlorNectar={selectedTeam.teleFlowerNectarAvg}
-                        gardenAvg={selectedTeam.gardenAvg}
-                      />
+                      {selectedTeam.history.length === 0 ? (
+                        <div style={{ padding: '28px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Este equipo aún no tiene partidos capturados en Captura_BIOBUZZ.
+                        </div>
+                      ) : (
+                        <div className="table-wrap" style={{ border: 'none', borderRadius: 0 }}>
+                          <table className="rag-table">
+                            <thead>
+                              <tr>
+                                <th>Match</th>
+                                <th>Alianza</th>
+                                <th>Inicio</th>
+                                <th>Bal. Auto (P/N)</th>
+                                <th>Flor Auto (P/N)</th>
+                                <th>Bal. Tele (P/N)</th>
+                                <th>Flor Tele (P/N)</th>
+                                <th>Prop. Flor</th>
+                                <th>Garden</th>
+                                <th>Estatus</th>
+                                <th>Faltas</th>
+                                <th>Auto</th>
+                                <th>Tele</th>
+                                <th>Neto</th>
+                              </tr>
+                            </thead>
+                            <tbody className="tabular">
+                              {selectedTeam.history.map((m) => (
+                                <tr key={m.id} style={{ cursor: 'default' }}>
+                                  <td style={{ fontWeight: 900, color: '#FFFFFF' }}>M#{m.match}</td>
+                                  <td style={{ color: m.alliance === 'ROJO' ? 'var(--rag-coral)' : 'var(--accent-cyan)', fontWeight: 800 }}>
+                                    {m.alliance}
+                                  </td>
+                                  <td>{m.startPos}</td>
+                                  <td style={{ color: '#93C5FD' }}>{m.autoHivePollen} / {m.autoHiveNectar}</td>
+                                  <td style={{ color: '#FDA4AF' }}>{m.autoFlowerPollen} / {m.autoFlowerNectar}</td>
+                                  <td style={{ color: '#60A5FA', fontWeight: 800 }}>{m.teleopHivePollen} / {m.teleopHiveNectar}</td>
+                                  <td style={{ color: '#FB7185', fontWeight: 800 }}>{m.teleopFlowerPollen} / {m.teleopFlowerNectar}</td>
+                                  <td style={{ color: m.flowerOwnedCount > 0 ? '#FB7185' : 'var(--text-muted)', fontWeight: m.flowerOwnedCount > 0 ? 800 : 600 }}>
+                                    {m.flowerOwnedCount}
+                                  </td>
+                                  <td style={{ color: '#34D399', fontWeight: 800 }}>{m.gardenElements}</td>
+                                  <td style={{ color: m.status === '100% Operativo' ? 'var(--accent-emerald)' : 'var(--rag-coral)' }}>
+                                    {m.status}
+                                  </td>
+                                  <td>{m.foulsScore}</td>
+                                  <td style={{ color: 'var(--accent-cyan)' }}>{m.autoScore}</td>
+                                  <td style={{ color: 'var(--accent-amber)' }}>{m.teleScore}</td>
+                                  <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{m.netScore}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
 
                     <div className="panel">
                       <div className="panel-header">
-                        <span className="panel-title">Eficiencia, RP & Confiabilidad</span>
-                      </div>
-                      <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '12px' }}>
-                        {[
-                          { l: 'Auto [Min·Prom·Max]', v: `${selectedTeam.minAuto} · ${selectedTeam.autoAvg.toFixed(1)} · ${selectedTeam.maxAuto}`, c: '#FAFAFA' },
-                          { l: 'Tele [Min·Prom·Max]', v: `${selectedTeam.minTele} · ${selectedTeam.teleAvg.toFixed(1)} · ${selectedTeam.maxTele}`, c: '#FAFAFA' },
-                          { l: 'Neto [Min·Prom·Max]', v: `${selectedTeam.minNet} · ${selectedTeam.epaNetAvg.toFixed(1)} · ${selectedTeam.maxNet}`, c: '#FFD166' },
-                        ].map((rng) => (
-                          <div key={rng.l} style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '8px 10px' }}>
-                            <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: 700 }}>{rng.l}</div>
-                            <div style={{ fontSize: '13px', fontWeight: 900, color: rng.c, marginTop: '2px' }}>[ {rng.v} ]</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
-                        {[
-                          { l: 'Auto Leave', v: `${selectedTeam.autoLeavePct.toFixed(0)}%`, c: '#94A3B8' },
-                          { l: 'Auto Park', v: `${selectedTeam.autoParkPct.toFixed(0)}%`, c: '#94A3B8' },
-                          { l: 'Endgame Park', v: `${selectedTeam.endgameParkPct.toFixed(0)}%`, c: '#FFD166' },
-                          { l: 'Control Flor', v: `${selectedTeam.flowerControlPct.toFixed(0)}% · ${selectedTeam.flowersOwnedAvg.toFixed(1)} fl.`, c: '#FB7185' },
-                          { l: 'Bottom Nectar', v: `${selectedTeam.bottomNectarPct.toFixed(0)}%`, c: '#F87171' },
-                          { l: 'Descore Garden', v: `${selectedTeam.gardenDescorePct.toFixed(0)}%`, c: '#34D399' },
-                        ].map((m) => (
-                          <div
-                            key={m.l}
-                            style={{
-                              background: 'var(--bg-carbon)',
-                              border: '1px solid var(--border-steel)',
-                              borderRadius: '4px',
-                              padding: '10px',
-                            }}
-                          >
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{m.l}</div>
-                            <div style={{ fontSize: '18px', fontWeight: 900, color: m.c }}>{m.v}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="panel">
-                      <div className="panel-header">
-                        <span className="panel-title">Notas de Scouters & Alertas</span>
+                        <span className="panel-title">Notas de Scouters &amp; Alertas</span>
                       </div>
                       {selectedTeam.notes.length === 0 ? (
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sin observaciones ni fallas reportadas.</div>
@@ -1229,93 +1563,8 @@ export default function RagnarokAnalyticsPage() {
                         </div>
                       )}
                     </div>
-                  </div>
-
-                  {/* Columna Derecha: Historic + Field Heatmap */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div className="panel">
-                      <div className="panel-header">
-                        <span className="panel-title">HISTORIC • Tendencia por Partido</span>
-                        <span className="tabular" style={{ fontSize: '11px', color: 'var(--accent-amber)', fontWeight: 700 }}>
-                          Swarm Prom: {selectedTeam.swarmPtsAvg.toFixed(1)} pts
-                        </span>
-                      </div>
-                      <TeamHistoricChart history={selectedTeam.history} />
-                    </div>
-
-                    <div className="panel">
-                      <div className="panel-header">
-                        <span className="panel-title">POSITIONS • Zonas de Inicio (6×6 BIOBUZZ)</span>
-                        <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-silver)', fontWeight: 700 }}>
-                          Favorita: {selectedTeam.topStartPos}
-                        </span>
-                      </div>
-                      <RagnarokFieldHeatmap
-                        positions={selectedTeam.positions}
-                        sidePositions={selectedTeam.sidePositions}
-                        teamNumber={selectedTeam.team}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tabla detallada Match por Match */}
-                <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-                  <div className="panel-header" style={{ padding: '14px 16px', marginBottom: 0 }}>
-                    <span className="panel-title">Bitácora de Partidos (#{selectedTeam.team})</span>
-                    <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                      {selectedTeam.history.length} registros
-                    </span>
-                  </div>
-                  <div className="table-wrap" style={{ border: 'none', borderRadius: 0 }}>
-                    <table className="rag-table">
-                      <thead>
-                        <tr>
-                          <th>Match</th>
-                          <th>Alianza</th>
-                          <th>Inicio</th>
-                          <th>Bal. Auto (P/N)</th>
-                          <th>Flor Auto (P/N)</th>
-                          <th>Bal. Tele (P/N)</th>
-                          <th>Flor Tele (P/N)</th>
-                          <th>Prop. Flor</th>
-                          <th>Garden</th>
-                          <th>Estatus</th>
-                          <th>Faltas</th>
-                          <th>Auto</th>
-                          <th>Tele</th>
-                          <th>Neto</th>
-                        </tr>
-                      </thead>
-                      <tbody className="tabular">
-                        {selectedTeam.history.map((m) => (
-                          <tr key={m.id} style={{ cursor: 'default' }}>
-                            <td style={{ fontWeight: 900, color: '#FFFFFF' }}>M#{m.match}</td>
-                            <td style={{ color: m.alliance === 'ROJO' ? 'var(--rag-coral)' : 'var(--accent-cyan)', fontWeight: 800 }}>
-                              {m.alliance}
-                            </td>
-                            <td>{m.startPos}</td>
-                            <td style={{ color: '#93C5FD' }}>{m.autoHivePollen} / {m.autoHiveNectar}</td>
-                            <td style={{ color: '#FDA4AF' }}>{m.autoFlowerPollen} / {m.autoFlowerNectar}</td>
-                            <td style={{ color: '#60A5FA', fontWeight: 800 }}>{m.teleopHivePollen} / {m.teleopHiveNectar}</td>
-                            <td style={{ color: '#FB7185', fontWeight: 800 }}>{m.teleopFlowerPollen} / {m.teleopFlowerNectar}</td>
-                            <td style={{ color: m.flowerOwnedCount > 0 ? '#FB7185' : 'var(--text-muted)', fontWeight: m.flowerOwnedCount > 0 ? 800 : 600 }}>
-                              {m.flowerOwnedCount}
-                            </td>
-                            <td style={{ color: '#34D399', fontWeight: 800 }}>{m.gardenElements}</td>
-                            <td style={{ color: m.status === '100% Operativo' ? 'var(--accent-emerald)' : 'var(--rag-coral)' }}>
-                              {m.status}
-                            </td>
-                            <td>{m.foulsScore}</td>
-                            <td style={{ color: 'var(--accent-cyan)' }}>{m.autoScore}</td>
-                            <td style={{ color: 'var(--accent-amber)' }}>{m.teleScore}</td>
-                            <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{m.netScore}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                  </>
+                )}
               </>
             )}
           </>

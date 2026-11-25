@@ -1,6 +1,18 @@
 # The Beyonder • FTC BIOBUZZ (2026–2027)
 
-Dashboard de telemetría avanzada, picklist, simulador Monte Carlo (Timestone) y proyecciones de Standings conectado en vivo a Google Sheets (`Resumen_Equipos`, `Captura_BIOBUZZ` y las 6 pestañas `*_EVENT` de Timestone) y FTCScout.
+Dashboard de telemetría avanzada, ficha técnica de pits + galería de fotos, picklist, simulador Monte Carlo (Timestone) y proyecciones de Standings conectado en vivo a Google Sheets (`Resumen_Equipos`, `Captura_BIOBUZZ`, `Pit_BIOBUZZ`, `Pit_Fotos` y las pestañas `*_EVENT` de Timestone) y FTCScout.
+
+## Rutas Principales
+- `/` (**The Beyonder**):
+  - **Ranking & Picklist**: filtros por rol, confiabilidad, bajas faltas, filtro **`Con Pit`**, búsqueda por número o nombre de equipo, y etiquetas de picklist persistidas.
+  - **Perfil de Equipo** (reestructurado en 3 secciones):
+    1. **Resumen & Pit**: comparativa 1v1 (telemetría + pits), galería de fotos del robot con lightbox (`/api/pit/photo?id=...`), especificaciones estructuradas (`Hardware & Mecánica`, `Autónomo & Software`, `Equipo & Observaciones`), eficiencia y notas de scouters.
+    2. **Gráficas & Cancha**: radar BIOBUZZ (con overlay 1v1), distribuciones Balancín vs Flor, tendencia histórica y mapa de calor 6×6 de zonas de inicio `A–E`.
+    3. **Bitácora**: historial partido a partido y alertas.
+  - **Match 2v2**, **Simulador Alianzas** y **Standings Proy.**.
+- `/api/analytics`: agrega `Captura_BIOBUZZ`, `Resumen_Equipos`, `Pit_BIOBUZZ`, metadatos de `Pit_Fotos` y hojas `*_EVENT` de Timestone.
+- `/api/pit/photo?id=...`: reconstruye y sirve imágenes almacenadas en `Pit_Fotos` por fragmentos Base64.
+- `/api/timestone/refresh`: ejecuta Timestone en local (`.venv`) o vía GitHub Actions (`timestone-refresh.yml`).
 
 ## Variables de entorno en Vercel
 - `GOOGLE_SHEET_ID`

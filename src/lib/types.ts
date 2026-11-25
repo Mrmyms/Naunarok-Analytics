@@ -109,6 +109,36 @@ export interface TimestonePayload {
   standings: TimestoneStandingRow[];
 }
 
+export interface PitPhotoMeta {
+  photoId: string;
+  fileName: string;
+  mimeType: string;
+  caption: string;
+  sizeBytes: number;
+  timestamp: string;
+}
+
+export interface PitProfile {
+  timestamp: string;
+  team: number;
+  teamName: string;
+  scouter: string;
+  chassisType: string;
+  weightLb: number | null;
+  intakeType: string;
+  capacity: string;
+  hiveMech: string;
+  flowerMech: string;
+  autoRoutines: string[];
+  autoSide: string;
+  sensorsVision: string[];
+  claimedAutoPoints: number;
+  driverHours: string;
+  preferredRole: string;
+  notes: string;
+  photos: PitPhotoMeta[];
+}
+
 export interface TeamAnalytics {
   rank: number;
   team: number;
@@ -152,6 +182,7 @@ export interface TeamAnalytics {
   notes: { match: number; scouter: string; alliance: string; note: string; status: string }[];
   history: MatchRecord[];
   timestone?: TimestoneTeamMetric;
+  pit?: PitProfile;
 }
 
 export interface AnalyticsPayload {
@@ -159,6 +190,7 @@ export interface AnalyticsPayload {
   updatedAt: string;
   matchesCount: number;
   teamsCount: number;
+  pitCount?: number;
   teams: TeamAnalytics[];
   matches: MatchRecord[];
   timestone?: TimestonePayload;

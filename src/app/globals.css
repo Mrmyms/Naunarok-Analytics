@@ -476,6 +476,36 @@ body {
   gap: 16px;
 }
 
+.profile-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-subtabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-obsidian);
+  border: 1px solid var(--border-steel);
+  border-radius: 6px;
+  padding: 3px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.pit-spec-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pit-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
 @media (max-width: 1140px) {
   .nav-subbar-inner {
     flex-direction: column;
@@ -494,6 +524,12 @@ body {
 @media (max-width: 960px) {
   .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .profile-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pit-spec-grid {
+    grid-template-columns: 1fr;
   }
   .split-2col,
   .match-2col {

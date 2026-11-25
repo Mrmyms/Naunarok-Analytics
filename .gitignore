@@ -18,6 +18,7 @@ yarn-error.log*
 out/
 build/
 dist/
+tsconfig.tsbuildinfo
 
 # OS Files
 .DS_Store

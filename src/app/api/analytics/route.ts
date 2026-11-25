@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
-import { fetchAnalyticsSheets, fetchTimestoneSheets } from '@/lib/googleSheets';
+import {
+  fetchAnalyticsSheets,
+  fetchPitScoutingData,
+  fetchTimestoneSheets,
+} from '@/lib/googleSheets';
 import type {
   MatchRecord,
+  PitPhotoMeta,
+  PitProfile,
   TeamAnalytics,
   TimestoneMatchSim,
   TimestonePayload,
@@ -225,7 +231,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const requestedEvent = searchParams.get('event')?.trim().toUpperCase() || undefined;
 
-    const [{ resumenRows, capturaRows }, rawTimestone] = await Promise.all([
+    const [{ resumenRows, capturaRows }, rawTimestone, rawPit] = await Promise.all([
       fetchAnalyticsSheets(),
       fetchTimestoneSheets(requestedEvent).catch((err) => {
         console.warn('No se pudieron cargar pestañas de Timestone:', err);
@@ -237,12 +243,102 @@ export async function GET(request: Request) {
           standingsRows: [],
         };
       }),
+      fetchPitScoutingData().catch((err) => {
+        console.warn('No se pudieron cargar pestañas de Pit Scouting:', err);
+        return { pitRows: [], photoMetaRows: [] };
+      }),
     ]);
 
     const timestone = parseTimestonePayload(rawTimestone);
     const timestoneTeamMap = new Map<number, TimestoneTeamMetric>(
       timestone.teams.map((t) => [t.team, t])
     );
+
+    // 0. Parse Pit_Fotos metadata (columns A..I) and Pit_BIOBUZZ (columns A..S)
+    const photoMetaById = new Map<string, PitPhotoMeta>();
+    const photosByTeam = new Map<number, PitPhotoMeta[]>();
+    for (const r of rawPit.photoMetaRows) {
+      const photoId = String(r[1] ?? '').trim();
+      if (!photoId || photoMetaById.has(photoId)) continue;
+      const teamNum = toNum(r[2], 0);
+      const meta: PitPhotoMeta = {
+        photoId,
+        fileName: String(r[3] ?? 'photo'),
+        mimeType: String(r[4] ?? 'application/octet-stream'),
+        caption: String(r[5] ?? 'Vista General'),
+        sizeBytes: toNum(r[8], 0),
+        timestamp: formatSerialDate(r[0]),
+      };
+      photoMetaById.set(photoId, meta);
+      if (teamNum > 0) {
+        const list = photosByTeam.get(teamNum) || [];
+        list.push(meta);
+        photosByTeam.set(teamNum, list);
+      }
+    }
+
+    const pitByTeam = new Map<number, PitProfile>();
+    for (const r of rawPit.pitRows.slice(1)) {
+      const teamNum = toNum(r[1], 0);
+      if (!teamNum) continue;
+
+      const splitCsv = (val: unknown): string[] =>
+        String(val ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+      const rawWeight = r[5];
+      const weightNum =
+        rawWeight === '' || rawWeight === null || rawWeight === undefined
+          ? null
+          : Number.isFinite(Number(rawWeight))
+            ? Number(rawWeight)
+            : null;
+
+      const rowPhotoIds = splitCsv(r[18]);
+      const existing = pitByTeam.get(teamNum);
+      const mergedPhotosMap = new Map<string, PitPhotoMeta>();
+
+      if (existing) {
+        for (const p of existing.photos) mergedPhotosMap.set(p.photoId, p);
+      }
+      for (const pid of rowPhotoIds) {
+        const meta = photoMetaById.get(pid) || {
+          photoId: pid,
+          fileName: 'photo',
+          mimeType: 'image/jpeg',
+          caption: 'Vista General',
+          sizeBytes: 0,
+          timestamp: '',
+        };
+        mergedPhotosMap.set(pid, meta);
+      }
+      for (const p of photosByTeam.get(teamNum) || []) {
+        if (!mergedPhotosMap.has(p.photoId)) mergedPhotosMap.set(p.photoId, p);
+      }
+
+      pitByTeam.set(teamNum, {
+        timestamp: formatSerialDate(r[0]),
+        team: teamNum,
+        teamName: String(r[2] ?? '').trim(),
+        scouter: String(r[3] ?? '').trim(),
+        chassisType: String(r[4] ?? '').trim(),
+        weightLb: weightNum,
+        intakeType: String(r[6] ?? '').trim(),
+        capacity: String(r[7] ?? '').trim(),
+        hiveMech: String(r[8] ?? '').trim(),
+        flowerMech: String(r[9] ?? '').trim(),
+        autoRoutines: splitCsv(r[10]),
+        autoSide: String(r[11] ?? '').trim(),
+        sensorsVision: splitCsv(r[12]),
+        claimedAutoPoints: toNum(r[13], 0),
+        driverHours: String(r[14] ?? '').trim(),
+        preferredRole: String(r[15] ?? '').trim(),
+        notes: String(r[16] ?? '').trim(),
+        photos: Array.from(mergedPhotosMap.values()),
+      });
+    }
 
     // 1. Parse Captura_BIOBUZZ rows (row 0 = headers A1:AE1)
     const rawCapturas = capturaRows.slice(1);
@@ -304,7 +400,7 @@ export async function GET(request: Request) {
 
     const buildTeamAnalytics = (teamNum: number, resumenRow?: unknown[], fallbackRank = 1): TeamAnalytics => {
       const teamMatches = [...(matchesByTeam.get(teamNum) || [])].sort((a, b) => a.match - b.match);
-      const count = teamMatches.length || (resumenRow ? toNum(resumenRow[2], 1) : 1);
+      const count = teamMatches.length || (resumenRow ? toNum(resumenRow[2], 0) : 0);
 
       const avg = (fn: (m: MatchRecord) => number) =>
         teamMatches.length ? teamMatches.reduce((s, m) => s + fn(m), 0) / teamMatches.length : 0;
@@ -439,6 +535,7 @@ export async function GET(request: Request) {
           .reverse(),
         history: teamMatches,
         timestone: timestoneTeamMap.get(teamNum),
+        pit: pitByTeam.get(teamNum),
       };
     };
 
@@ -459,6 +556,14 @@ export async function GET(request: Request) {
       }
     }
 
+    // Add any team with Pit Scouting recorded before playing its first match
+    for (const [teamNum] of pitByTeam.entries()) {
+      if (!seenTeams.has(teamNum)) {
+        seenTeams.add(teamNum);
+        teams.push(buildTeamAnalytics(teamNum, undefined, teams.length + 1));
+      }
+    }
+
     teams.sort((a, b) => b.epaNetAvg - a.epaNetAvg || a.rank - b.rank);
     teams.forEach((t, idx) => {
       t.rank = idx + 1;
@@ -469,6 +574,7 @@ export async function GET(request: Request) {
       updatedAt: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       matchesCount: matches.length,
       teamsCount: teams.length,
+      pitCount: pitByTeam.size,
       teams,
       matches,
       timestone,
