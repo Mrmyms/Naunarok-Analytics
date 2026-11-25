@@ -203,7 +203,7 @@ export default function RagnarokAnalyticsPage() {
             setTimestoneStatusMsg(
               changed
                 ? `Timestone (${targetEvent}) sincronizado correctamente.`
-                : `Actualización de Timestone (${targetEvent}) enviada; vuelve a pulsar Actualizar en unos segundos si aún sigue corriendo.`
+                : `Actualización de Timestone (${targetEvent}) enviada; vuelve a pulsar Refrescar datos en unos segundos si aún sigue corriendo.`
             );
           }
         }, 12_000);
@@ -488,23 +488,19 @@ export default function RagnarokAnalyticsPage() {
 
   return (
     <div className="shell">
-      {/* Top Pit-Wall Bar */}
+      {/* Band 1: Brand & Collaboration Header */}
       <header className="topbar">
         <div className="topbar-inner">
-          <div className="topbar-row">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <img
-                src="/beyonder-logo.svg"
-                alt="Logo The Beyonder"
-                width={54}
-                height={54}
-                style={{
-                  display: 'block',
-                  flexShrink: 0,
-                  filter: 'drop-shadow(0 0 12px rgba(168, 85, 247, 0.5))',
-                }}
-              />
-              <div style={{ fontSize: '17px', fontWeight: 900, letterSpacing: '0.8px', color: 'var(--text-white)' }}>
+          <div className="brand-lockup">
+            <img
+              src="/beyonder-logo.svg"
+              alt="Logo The Beyonder"
+              width={50}
+              height={50}
+              className="brand-logo-beyonder"
+            />
+            <div className="brand-text-stack">
+              <div className="brand-title">
                 THE{' '}
                 <span
                   style={{
@@ -516,161 +512,171 @@ export default function RagnarokAnalyticsPage() {
                   BEYONDER
                 </span>
               </div>
+              <div className="brand-subtitle">FTC Scouting &amp; Alliance Engine</div>
             </div>
-
-            <nav className="nav-tabs" aria-label="Vistas de Analítica">
-              {(
-                [
-                  { id: 'ranking', label: 'Ranking & Picklist' },
-                  { id: 'equipo', label: 'Perfil de Equipo' },
-                  { id: 'match', label: 'Match 2v2' },
-                  { id: 'alianza', label: 'Simulador Alianzas' },
-                  { id: 'standings', label: 'Standings Proy.' },
-                ] as { id: ViewTab; label: string }[]
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setTab(item.id)}
-                  className={`nav-tab ${tab === item.id ? 'active' : ''}`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
           </div>
 
-          <div className="topbar-row">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <select
-                aria-label="Evento activo"
-                value={activeEventCode || '__NEW__'}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === '__NEW__') {
-                    setShowEventPicker(true);
-                  } else {
-                    activateEvent(val);
-                  }
-                }}
-                className="select-rag tabular"
-                style={{ maxWidth: '165px' }}
-              >
-                {availableEventOptions.length === 0 && (
-                  <option value="__NEW__">Seleccionar evento...</option>
-                )}
-                {availableEventOptions.map((ev) => (
-                  <option key={ev} value={ev}>
-                    Evento: {ev}
-                  </option>
-                ))}
-                <option value="__NEW__">+ Buscar / Otro...</option>
-              </select>
-
-              <button
-                type="button"
-                onClick={() => setShowEventPicker((prev) => !prev)}
-                className={`btn-ghost ${showEventPicker ? 'active' : ''}`}
-                title="Buscar evento en FTCScout o ingresar código personalizado"
-              >
-                {showEventPicker ? 'Cerrar' : 'Cambiar'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => triggerTimestoneRefresh(undefined, false)}
-                disabled={timestoneRefreshing}
-                className="btn-ghost"
-                title={
-                  timestoneData?.updatedAt
-                    ? `Último Timestone (${activeEventCode || 'Sin evento'}): ${new Date(timestoneData.updatedAt).toLocaleString('es-MX')}`
-                    : 'Ejecutar simulación Timestone (Monte Carlo + FTCScout)'
-                }
-              >
-                <span
-                  style={{
-                    width: '7px',
-                    height: '7px',
-                    borderRadius: '999px',
-                    background: timestoneRefreshing
-                      ? 'var(--accent-amber)'
-                      : timestoneData?.available && !timestoneData?.isStale
-                        ? 'var(--accent-emerald)'
-                        : 'var(--accent-amber)',
-                    display: 'inline-block',
-                  }}
-                />
-                {timestoneRefreshing
-                  ? 'Simulando...'
-                  : activeEventCode
-                    ? `Timestone (${activeEventCode})${timestoneData?.ageMinutes !== null && timestoneData?.ageMinutes !== undefined ? ` • ${timestoneData.ageMinutes}m` : ''}`
-                    : 'Timestone'}
-              </button>
-
-              <button type="button" onClick={() => fetchAnalytics()} disabled={loading} className="btn-rag">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                </svg>
-                {loading ? 'Sincronizando...' : 'Actualizar'}
-              </button>
-            </div>
-
-            <div
-              className="collab-lockup"
-              title="Colaboración Nautilus 4010 × Ragnarok"
-              aria-label="Colaboración Nautilus 4010 por Ragnarok"
+          <div
+            className="collab-lockup"
+            title="Colaboración Nautilus 4010 × Ragnarok"
+            aria-label="Colaboración Nautilus 4010 por Ragnarok"
+          >
+            <img
+              src="/nautilus-logo.png"
+              alt="Logo Nautilus 4010"
+              className="collab-logo-nautilus"
+            />
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              className="collab-x-icon"
+              aria-hidden="true"
             >
-              <img
-                src="/nautilus-logo.png"
-                alt="Logo Nautilus 4010"
-                className="collab-logo-nautilus"
+              <path
+                d="M3 3L13 13M13 3L3 13"
+                stroke="currentColor"
+                strokeWidth="2.1"
+                strokeLinecap="round"
               />
-              <svg
-                viewBox="0 0 16 16"
-                fill="none"
-                className="collab-x-icon"
-                aria-hidden="true"
-              >
-                <path
-                  d="M3 3L13 13M13 3L3 13"
-                  stroke="currentColor"
-                  strokeWidth="2.1"
-                  strokeLinecap="round"
-                />
-              </svg>
-              <img
-                src="/ragnarok-logo.svg"
-                alt="Logo Ragnarok"
-                className="collab-logo-ragnarok"
-              />
-            </div>
+            </svg>
+            <img
+              src="/ragnarok-logo.svg"
+              alt="Logo Ragnarok"
+              className="collab-logo-ragnarok"
+            />
           </div>
         </div>
       </header>
+
+      {/* Band 2: Sticky Navigation & Live Session Controls */}
+      <div className="nav-subbar">
+        <div className="nav-subbar-inner">
+          <nav className="nav-tabs" aria-label="Vistas de Analítica">
+            {(
+              [
+                { id: 'ranking', label: 'Ranking & Picklist' },
+                { id: 'equipo', label: 'Perfil de Equipo' },
+                { id: 'match', label: 'Match 2v2' },
+                { id: 'alianza', label: 'Simulador Alianzas' },
+                { id: 'standings', label: 'Standings Proy.' },
+              ] as { id: ViewTab; label: string }[]
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setTab(item.id)}
+                className={`nav-tab ${tab === item.id ? 'active' : ''}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="topbar-controls">
+            <button
+              type="button"
+              onClick={() => setShowEventPicker((prev) => !prev)}
+              aria-expanded={showEventPicker}
+              aria-label="Cambiar o buscar evento"
+              className={`btn-ghost tabular ${showEventPicker ? 'active' : ''}`}
+              title="Cambiar evento desde Google Sheets o buscar en FTCScout"
+            >
+              <span>{activeEventCode ? `Evento: ${activeEventCode}` : 'Seleccionar evento'}</span>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                style={{
+                  transform: showEventPicker ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.15s ease',
+                }}
+                aria-hidden="true"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => triggerTimestoneRefresh(undefined, false)}
+              disabled={timestoneRefreshing}
+              className="btn-ghost"
+              title={
+                timestoneData?.updatedAt
+                  ? `Último Timestone (${activeEventCode || 'Sin evento'}): ${new Date(timestoneData.updatedAt).toLocaleString('es-MX')} — Clic para recalcular simulación`
+                  : 'Recalcular simulación Timestone (Monte Carlo + FTCScout)'
+              }
+            >
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '999px',
+                  background: timestoneRefreshing
+                    ? 'var(--accent-amber)'
+                    : timestoneData?.available && !timestoneData?.isStale
+                      ? 'var(--accent-emerald)'
+                      : 'var(--accent-amber)',
+                  display: 'inline-block',
+                }}
+              />
+              {timestoneRefreshing
+                ? 'Simulando...'
+                : `Timestone${timestoneData?.ageMinutes !== null && timestoneData?.ageMinutes !== undefined ? ` • ${timestoneData.ageMinutes}m` : ''}`}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fetchAnalytics()}
+              disabled={loading}
+              className="btn-rag"
+              title="Recargar datos actuales desde Google Sheets sin recalcular Timestone"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+              {loading ? 'Refrescando...' : 'Refrescar datos'}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <main className="main-container">
         {showEventPicker && (
           <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderColor: 'var(--bey-purple)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <span className="panel-title">Selector Dinámico de Evento (FTCScout + Google Sheets)</span>
-              {loadedEvent && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {loadedEvent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoadedEvent(null);
+                      loadedEventRef.current = undefined;
+                      setScheduleMatches([]);
+                      setEventCodeInput('');
+                      localStorage.removeItem(EVENT_STORAGE_KEY);
+                      fetchAnalytics();
+                    }}
+                    className="btn-ghost"
+                    style={{ padding: '4px 9px', fontSize: '11px' }}
+                  >
+                    Restablecer ({loadedEvent.code})
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => {
-                    setLoadedEvent(null);
-                    loadedEventRef.current = undefined;
-                    setScheduleMatches([]);
-                    setEventCodeInput('');
-                    localStorage.removeItem(EVENT_STORAGE_KEY);
-                    fetchAnalytics();
-                  }}
+                  onClick={() => setShowEventPicker(false)}
                   className="btn-ghost"
                   style={{ padding: '4px 9px', fontSize: '11px' }}
                 >
-                  Restablecer ({loadedEvent.code})
+                  Cerrar
                 </button>
-              )}
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -812,7 +818,7 @@ export default function RagnarokAnalyticsPage() {
             </section>
 
             {/* Filtros tácticos y Picklist */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div className="filter-toolbar">
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 <input
                   type="text"
@@ -1761,6 +1767,13 @@ export default function RagnarokAnalyticsPage() {
           </>
         )}
       </main>
+
+      <footer className="shell-footer">
+        <div className="shell-footer-inner">
+          <span>THE BEYONDER · Pit-Wall Scouting Analytics</span>
+          <span>Nautilus 4010 × Ragnarok</span>
+        </div>
+      </footer>
     </div>
   );
 }
