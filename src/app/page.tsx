@@ -21,7 +21,7 @@ import {
 } from '@/lib/roles';
 import type { AnalyticsPayload, ScheduleMatch, TeamAnalytics } from '@/lib/types';
 
-type ViewTab = 'ranking' | 'equipo' | 'match' | 'alianza' | 'standings';
+type ViewTab = 'ranking' | 'equipo' | 'match' | 'alianza' | 'perfect_match' | 'standings';
 type SortKey =
   | 'rank'
   | 'team'
@@ -626,14 +626,15 @@ export default function RagnarokAnalyticsPage() {
                 { id: 'equipo', label: 'Perfil de Equipo' },
                 { id: 'match', label: 'Match 2v2' },
                 { id: 'alianza', label: 'Simulador Alianzas' },
+                { id: 'perfect_match', label: '✦ Match Perfecto', featured: true },
                 { id: 'standings', label: 'Standings Proy.' },
-              ] as { id: ViewTab; label: string }[]
+              ] as { id: ViewTab; label: string; featured?: boolean }[]
             ).map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setTab(item.id)}
-                className={`nav-tab ${tab === item.id ? 'active' : ''}`}
+                className={`nav-tab ${item.featured ? 'nav-tab-featured' : ''} ${tab === item.id ? 'active' : ''}`}
               >
                 {item.label}
               </button>
@@ -2098,24 +2099,19 @@ export default function RagnarokAnalyticsPage() {
                     : `RIVAL +${Math.abs(allianceDiff).toFixed(1)} PTS DE VENTAJA`}
                 </div>
               </div>
-              <div className="tabular" style={{ display: 'flex', gap: '16px', fontSize: '13px', fontWeight: 800 }}>
+              <div className="tabular" style={{ display: 'flex', gap: '12px', fontSize: '13px', fontWeight: 800, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span style={{ color: 'var(--bey-purple)' }}>TU ALIANZA: {myAllianceProj.net.toFixed(1)}</span>
                 <span style={{ color: 'var(--accent-cyan)' }}>RIVAL: {oppAllianceProj.net.toFixed(1)}</span>
+                <button
+                  type="button"
+                  onClick={() => setTab('perfect_match')}
+                  className="btn-ghost"
+                  style={{ borderColor: 'rgba(168, 85, 247, 0.5)', color: '#E9D5FF', fontSize: '11px' }}
+                >
+                  ✦ Buscar Match Perfecto →
+                </button>
               </div>
             </div>
-
-            <AllianceMatchFinder
-              captain={teamMap.get(allyCap) || null}
-              allTeams={teams}
-              pickTags={pickTags}
-              rivalProjectedNet={oppAllianceProj.members.length > 0 ? oppAllianceProj.net : null}
-              selectedPick1={allyPick1}
-              selectedSub={allySub}
-              excludedRivalIds={[opp1, opp2, oppSub].filter(Boolean)}
-              onSelectPick1={setAllyPick1}
-              onSelectSub={setAllySub}
-              onOpenProfile={openTeamProfile}
-            />
 
             <div className="match-2col">
               {[
@@ -2214,6 +2210,27 @@ export default function RagnarokAnalyticsPage() {
               ]}
             />
           </>
+        )}
+
+        {/* ================= 4B. MATCH PERFECTO (OPTIMIZADOR DE PAREJA) ================= */}
+        {tab === 'perfect_match' && (
+          <AllianceMatchFinder
+            captain={teamMap.get(allyCap) || teams[0] || null}
+            onChangeCaptain={setAllyCap}
+            allTeams={teams}
+            pickTags={pickTags}
+            rivalProjectedNet={oppAllianceProj.members.length > 0 ? oppAllianceProj.net : null}
+            selectedPick1={allyPick1}
+            selectedSub={allySub}
+            excludedRivalIds={[opp1, opp2, oppSub].filter(Boolean)}
+            onSelectPick1={setAllyPick1}
+            onSelectSub={setAllySub}
+            onSimulateAlliance={(teamNum) => {
+              setAllyPick1(teamNum);
+              setTab('alianza');
+            }}
+            onOpenProfile={openTeamProfile}
+          />
         )}
 
         {/* ================= 5. STANDINGS PROYECTADOS (HÍBRIDO REAL + MONTE CARLO) ================= */}
