@@ -114,9 +114,9 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
   const standingsTab = `Standings_Proy_${resolvedEvent}`;
 
   const rangesToFetch: { key: 'ranking' | 'matches' | 'standings'; range: string }[] = [];
-  if (titles.includes(rankingTab)) rangesToFetch.push({ key: 'ranking', range: `${rankingTab}!A1:AF200` });
-  if (titles.includes(matchesTab)) rangesToFetch.push({ key: 'matches', range: `${matchesTab}!A1:Z300` });
-  if (titles.includes(standingsTab)) rangesToFetch.push({ key: 'standings', range: `${standingsTab}!A1:Z200` });
+  if (titles.includes(rankingTab)) rangesToFetch.push({ key: 'ranking', range: `${rankingTab}!A1:AZ200` });
+  if (titles.includes(matchesTab)) rangesToFetch.push({ key: 'matches', range: `${matchesTab}!A1:AZ300` });
+  if (titles.includes(standingsTab)) rangesToFetch.push({ key: 'standings', range: `${standingsTab}!A1:AZ200` });
 
   if (rangesToFetch.length === 0) {
     return {

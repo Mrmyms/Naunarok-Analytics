@@ -35,8 +35,19 @@ export default function DuelComparisonBars({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {metrics.map((m) => {
-          const sum = m.leftVal + m.rightVal;
-          const leftPct = sum > 0 ? (m.leftVal / sum) * 100 : 50;
+          let leftPct = 50;
+          if (m.leftVal === m.rightVal) {
+            leftPct = 50;
+          } else if (m.leftVal < 0 || m.rightVal < 0) {
+            const minVal = Math.min(m.leftVal, m.rightVal);
+            const pad = Math.max(1, Math.abs(m.leftVal - m.rightVal) * 0.25);
+            const adjL = m.leftVal - minVal + pad;
+            const adjR = m.rightVal - minVal + pad;
+            leftPct = Math.max(5, Math.min(95, (adjL / (adjL + adjR)) * 100));
+          } else {
+            const sum = m.leftVal + m.rightVal;
+            leftPct = Math.max(0, Math.min(100, sum > 0 ? (m.leftVal / sum) * 100 : 50));
+          }
           const leftWins = m.lowerIsBetter ? m.leftVal < m.rightVal : m.leftVal > m.rightVal;
           const rightWins = m.lowerIsBetter ? m.rightVal < m.leftVal : m.rightVal > m.leftVal;
 

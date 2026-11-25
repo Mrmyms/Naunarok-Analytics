@@ -119,6 +119,18 @@ export function findBestPartners(params: {
   const minAuto = autoVals.length ? Math.min(...autoVals) : 0;
   const maxAuto = autoVals.length ? Math.max(...autoVals) : 1;
 
+  const oprVals = allTeams
+    .map((t) => t.timestone?.opr)
+    .filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+  const minOpr = oprVals.length ? Math.min(...oprVals) : 0;
+  const maxOpr = oprVals.length ? Math.max(...oprVals) : 1;
+
+  const dprVals = allTeams
+    .map((t) => t.timestone?.dpr)
+    .filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+  const minDpr = dprVals.length ? Math.min(...dprVals) : 0;
+  const maxDpr = dprVals.length ? Math.max(...dprVals) : 1;
+
   const capBal = captain.balancinAutoAvg + captain.balancinTeleAvg;
   const capFlor = captain.florAvg;
   const capRole = detectRobotRole(captain).role;
@@ -137,10 +149,14 @@ export function findBestPartners(params: {
     const candGar = cand.gardenAvg;
     const candRole = detectRobotRole(cand).role;
 
-    // 1. Offense (0..100)
+    // 1. Offense (0..100) — incorporates OPR when available
     const epaNorm = minMaxNorm(getEffectiveEpa(cand), minEpa, maxEpa);
     const peakNorm = minMaxNorm(cand.maxNet, minPeak, maxPeak);
-    const offense = clamp100(epaNorm * 0.75 + peakNorm * 0.25);
+    const candOpr = cand.timestone?.opr;
+    const offense =
+      oprVals.length >= 2 && candOpr !== null && candOpr !== undefined && Number.isFinite(candOpr)
+        ? clamp100(epaNorm * 0.45 + minMaxNorm(candOpr, minOpr, maxOpr) * 0.35 + peakNorm * 0.2)
+        : clamp100(epaNorm * 0.75 + peakNorm * 0.25);
 
     // 2. BIOBUZZ Synergy (0..100)
     let synergy = 50;
@@ -176,12 +192,23 @@ export function findBestPartners(params: {
     const candAutoNorm = minMaxNorm(cand.autoAvg, minAuto, maxAuto);
     const autoCompat = clamp100(65 + candAutoNorm * 0.25 + swarmBonus - collisionPenalty);
 
-    // 4. Reliability & Discipline (0..100)
+    // 4. Reliability & Discipline (0..100) — blends low DPR defense when available
     const discipline = clamp100(100 - cand.foulsAvg * 4);
     const driverNorm = clamp100((cand.driverAvg / 5) * 100);
     let reliability = cand.reliabilityPct * 0.65 + discipline * 0.25 + driverNorm * 0.1;
     if (cand.matchesPlayed > 0 && (cand.reliabilityPct < 70 || cand.foulsAvg > 15)) {
       reliability -= 15;
+    }
+    const candDpr = cand.timestone?.dpr;
+    if (
+      cand.matchesPlayed > 0 &&
+      dprVals.length >= 2 &&
+      candDpr !== null &&
+      candDpr !== undefined &&
+      Number.isFinite(candDpr)
+    ) {
+      const dprInvNorm = maxDpr > minDpr ? clamp100(((maxDpr - candDpr) / (maxDpr - minDpr)) * 100) : 50;
+      reliability = clamp100(reliability * 0.8 + dprInvNorm * 0.2);
     }
     if (cand.matchesPlayed === 0) {
       reliability = 35;
@@ -247,6 +274,17 @@ export function findBestPartners(params: {
         reasons.push({
           text: `Riesgo (${cand.reliabilityPct.toFixed(0)}% Op · ${cand.foulsAvg.toFixed(0)} faltas)`,
           tone: 'warn',
+        });
+      }
+
+      if (
+        cand.timestone?.ccwm != null &&
+        cand.timestone.ccwm > 0 &&
+        ((cand.timestone.rankOff ?? 99) <= 4 || (cand.timestone.rankDef ?? 99) <= 4)
+      ) {
+        reasons.push({
+          text: `OPR ${cand.timestone.opr?.toFixed(1) ?? '—'} · DPR ${cand.timestone.dpr?.toFixed(1) ?? '—'}`,
+          tone: 'good',
         });
       }
     }
