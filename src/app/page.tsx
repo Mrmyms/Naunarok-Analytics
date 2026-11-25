@@ -491,156 +491,160 @@ export default function RagnarokAnalyticsPage() {
       {/* Top Pit-Wall Bar */}
       <header className="topbar">
         <div className="topbar-inner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img
-              src="/beyonder-logo.svg"
-              alt="Logo The Beyonder"
-              width={54}
-              height={54}
-              style={{
-                display: 'block',
-                flexShrink: 0,
-                filter: 'drop-shadow(0 0 12px rgba(168, 85, 247, 0.5))',
-              }}
-            />
-            <div style={{ fontSize: '17px', fontWeight: 900, letterSpacing: '0.8px', color: 'var(--text-white)' }}>
-              THE{' '}
-              <span
+          <div className="topbar-row">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <img
+                src="/beyonder-logo.svg"
+                alt="Logo The Beyonder"
+                width={54}
+                height={54}
                 style={{
-                  background: 'linear-gradient(90deg, #A855F7 0%, #6366F1 55%, #38BDF8 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
+                  display: 'block',
+                  flexShrink: 0,
+                  filter: 'drop-shadow(0 0 12px rgba(168, 85, 247, 0.5))',
                 }}
-              >
-                BEYONDER
-              </span>
+              />
+              <div style={{ fontSize: '17px', fontWeight: 900, letterSpacing: '0.8px', color: 'var(--text-white)' }}>
+                THE{' '}
+                <span
+                  style={{
+                    background: 'linear-gradient(90deg, #A855F7 0%, #6366F1 55%, #38BDF8 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                  }}
+                >
+                  BEYONDER
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div
-            className="collab-lockup"
-            title="Colaboración Nautilus 4010 × Ragnarok"
-            aria-label="Colaboración Nautilus 4010 por Ragnarok"
-          >
-            <img
-              src="/nautilus-logo.png"
-              alt="Logo Nautilus 4010"
-              className="collab-logo-nautilus"
-            />
-            <svg
-              viewBox="0 0 16 16"
-              fill="none"
-              className="collab-x-icon"
-              aria-hidden="true"
-            >
-              <path
-                d="M3 3L13 13M13 3L3 13"
-                stroke="currentColor"
-                strokeWidth="1.9"
-                strokeLinecap="round"
-              />
-            </svg>
-            <img
-              src="/ragnarok-logo.svg"
-              alt="Logo Ragnarok"
-              className="collab-logo-ragnarok"
-            />
-          </div>
-
-          <nav className="nav-tabs" aria-label="Vistas de Analítica">
-            {(
-              [
-                { id: 'ranking', label: 'Ranking & Picklist' },
-                { id: 'equipo', label: 'Perfil de Equipo' },
-                { id: 'match', label: 'Match 2v2' },
-                { id: 'alianza', label: 'Simulador Alianzas' },
-                { id: 'standings', label: 'Standings Proy.' },
-              ] as { id: ViewTab; label: string }[]
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={`nav-tab ${tab === item.id ? 'active' : ''}`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <select
-              aria-label="Evento activo"
-              value={activeEventCode || '__NEW__'}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === '__NEW__') {
-                  setShowEventPicker(true);
-                } else {
-                  activateEvent(val);
-                }
-              }}
-              className="select-rag tabular"
-              style={{ maxWidth: '165px' }}
-            >
-              {availableEventOptions.length === 0 && (
-                <option value="__NEW__">Seleccionar evento...</option>
-              )}
-              {availableEventOptions.map((ev) => (
-                <option key={ev} value={ev}>
-                  Evento: {ev}
-                </option>
+            <nav className="nav-tabs" aria-label="Vistas de Analítica">
+              {(
+                [
+                  { id: 'ranking', label: 'Ranking & Picklist' },
+                  { id: 'equipo', label: 'Perfil de Equipo' },
+                  { id: 'match', label: 'Match 2v2' },
+                  { id: 'alianza', label: 'Simulador Alianzas' },
+                  { id: 'standings', label: 'Standings Proy.' },
+                ] as { id: ViewTab; label: string }[]
+              ).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  className={`nav-tab ${tab === item.id ? 'active' : ''}`}
+                >
+                  {item.label}
+                </button>
               ))}
-              <option value="__NEW__">+ Buscar / Otro...</option>
-            </select>
+            </nav>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setShowEventPicker((prev) => !prev)}
-              className={`btn-ghost ${showEventPicker ? 'active' : ''}`}
-              title="Buscar evento en FTCScout o ingresar código personalizado"
-            >
-              {showEventPicker ? 'Cerrar' : 'Cambiar'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => triggerTimestoneRefresh(undefined, false)}
-              disabled={timestoneRefreshing}
-              className="btn-ghost"
-              title={
-                timestoneData?.updatedAt
-                  ? `Último Timestone (${activeEventCode || 'Sin evento'}): ${new Date(timestoneData.updatedAt).toLocaleString('es-MX')}`
-                  : 'Ejecutar simulación Timestone (Monte Carlo + FTCScout)'
-              }
-            >
-              <span
-                style={{
-                  width: '7px',
-                  height: '7px',
-                  borderRadius: '999px',
-                  background: timestoneRefreshing
-                    ? 'var(--accent-amber)'
-                    : timestoneData?.available && !timestoneData?.isStale
-                      ? 'var(--accent-emerald)'
-                      : 'var(--accent-amber)',
-                  display: 'inline-block',
+          <div className="topbar-row">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <select
+                aria-label="Evento activo"
+                value={activeEventCode || '__NEW__'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '__NEW__') {
+                    setShowEventPicker(true);
+                  } else {
+                    activateEvent(val);
+                  }
                 }}
-              />
-              {timestoneRefreshing
-                ? 'Simulando...'
-                : activeEventCode
-                  ? `Timestone (${activeEventCode})${timestoneData?.ageMinutes !== null && timestoneData?.ageMinutes !== undefined ? ` • ${timestoneData.ageMinutes}m` : ''}`
-                  : 'Timestone'}
-            </button>
+                className="select-rag tabular"
+                style={{ maxWidth: '165px' }}
+              >
+                {availableEventOptions.length === 0 && (
+                  <option value="__NEW__">Seleccionar evento...</option>
+                )}
+                {availableEventOptions.map((ev) => (
+                  <option key={ev} value={ev}>
+                    Evento: {ev}
+                  </option>
+                ))}
+                <option value="__NEW__">+ Buscar / Otro...</option>
+              </select>
 
-            <button type="button" onClick={() => fetchAnalytics()} disabled={loading} className="btn-rag">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="23 4 23 10 17 10" />
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              <button
+                type="button"
+                onClick={() => setShowEventPicker((prev) => !prev)}
+                className={`btn-ghost ${showEventPicker ? 'active' : ''}`}
+                title="Buscar evento en FTCScout o ingresar código personalizado"
+              >
+                {showEventPicker ? 'Cerrar' : 'Cambiar'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => triggerTimestoneRefresh(undefined, false)}
+                disabled={timestoneRefreshing}
+                className="btn-ghost"
+                title={
+                  timestoneData?.updatedAt
+                    ? `Último Timestone (${activeEventCode || 'Sin evento'}): ${new Date(timestoneData.updatedAt).toLocaleString('es-MX')}`
+                    : 'Ejecutar simulación Timestone (Monte Carlo + FTCScout)'
+                }
+              >
+                <span
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '999px',
+                    background: timestoneRefreshing
+                      ? 'var(--accent-amber)'
+                      : timestoneData?.available && !timestoneData?.isStale
+                        ? 'var(--accent-emerald)'
+                        : 'var(--accent-amber)',
+                    display: 'inline-block',
+                  }}
+                />
+                {timestoneRefreshing
+                  ? 'Simulando...'
+                  : activeEventCode
+                    ? `Timestone (${activeEventCode})${timestoneData?.ageMinutes !== null && timestoneData?.ageMinutes !== undefined ? ` • ${timestoneData.ageMinutes}m` : ''}`
+                    : 'Timestone'}
+              </button>
+
+              <button type="button" onClick={() => fetchAnalytics()} disabled={loading} className="btn-rag">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+                {loading ? 'Sincronizando...' : 'Actualizar'}
+              </button>
+            </div>
+
+            <div
+              className="collab-lockup"
+              title="Colaboración Nautilus 4010 × Ragnarok"
+              aria-label="Colaboración Nautilus 4010 por Ragnarok"
+            >
+              <img
+                src="/nautilus-logo.png"
+                alt="Logo Nautilus 4010"
+                className="collab-logo-nautilus"
+              />
+              <svg
+                viewBox="0 0 16 16"
+                fill="none"
+                className="collab-x-icon"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 3L13 13M13 3L3 13"
+                  stroke="currentColor"
+                  strokeWidth="2.1"
+                  strokeLinecap="round"
+                />
               </svg>
-              {loading ? 'Sincronizando...' : 'Actualizar'}
-            </button>
+              <img
+                src="/ragnarok-logo.svg"
+                alt="Logo Ragnarok"
+                className="collab-logo-ragnarok"
+              />
+            </div>
           </div>
         </div>
       </header>

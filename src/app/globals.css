@@ -75,6 +75,13 @@ body {
   margin: 0 auto;
   padding: 9px 18px;
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.topbar-row {
+  width: 100%;
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
@@ -90,45 +97,37 @@ body {
 .collab-lockup {
   display: inline-flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 18px;
-  border-left: 1px solid rgba(148, 163, 184, 0.18);
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
-  opacity: 0.92;
-  transition: opacity 0.18s ease;
+  gap: 16px;
+  margin-left: auto;
   user-select: none;
+  transition: transform 0.18s ease;
 }
 
 .collab-lockup:hover {
-  opacity: 1;
+  transform: translateY(-1px);
 }
 
 .collab-logo-nautilus {
-  height: 34px;
+  height: 56px;
   width: auto;
   display: block;
   object-fit: contain;
-  filter: brightness(0) invert(0.96) drop-shadow(0 0 8px rgba(248, 250, 252, 0.14));
+  filter: drop-shadow(0 0 12px rgba(255, 209, 102, 0.28));
 }
 
 .collab-logo-ragnarok {
-  height: 42px;
+  height: 68px;
   width: auto;
   display: block;
   object-fit: contain;
-  filter: drop-shadow(0 0 8px rgba(248, 250, 252, 0.12));
+  filter: drop-shadow(0 0 12px rgba(225, 29, 72, 0.28));
 }
 
 .collab-x-icon {
-  width: 13px;
-  height: 13px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
-  color: var(--text-muted);
-  transition: color 0.18s ease;
-}
-
-.collab-lockup:hover .collab-x-icon {
-  color: var(--text-white);
+  color: var(--text-silver);
 }
 
 .brand-mark {
@@ -410,20 +409,17 @@ body {
     padding: 10px 12px;
   }
   .collab-lockup {
-    gap: 10px;
-    padding: 0 10px;
-    border-left: none;
-    border-right: none;
+    gap: 12px;
   }
   .collab-logo-nautilus {
-    height: 26px;
+    height: 40px;
   }
   .collab-logo-ragnarok {
-    height: 32px;
+    height: 48px;
   }
   .collab-x-icon {
-    width: 11px;
-    height: 11px;
+    width: 16px;
+    height: 16px;
   }
 }
 
