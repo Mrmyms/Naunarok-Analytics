@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AllianceMatchFinder from '@/components/AllianceMatchFinder';
 import DistributionBars from '@/components/DistributionBars';
 import DuelComparisonBars from '@/components/DuelComparisonBars';
-import RagnarokFieldHeatmap, { FieldMarker } from '@/components/RagnarokFieldHeatmap';
+import MatchScheduleView from '@/components/MatchScheduleView';
+import RagnarokFieldHeatmap from '@/components/RagnarokFieldHeatmap';
 import TeamHistoricChart from '@/components/TeamHistoricChart';
 import TeamPitCard, { PitComparePanel } from '@/components/TeamPitCard';
 import TeamRadarChart from '@/components/TeamRadarChart';
@@ -71,13 +72,6 @@ export default function RagnarokAnalyticsPage() {
   const [compareTeamNum, setCompareTeamNum] = useState<number>(0);
   const [profileSection, setProfileSection] = useState<'resumen' | 'graficas' | 'bitacora'>('resumen');
 
-  // Match 2v2 Breakdown state
-  const [matchNum, setMatchNum] = useState<number>(1);
-  const [red1, setRed1] = useState<number>(0);
-  const [red2, setRed2] = useState<number>(0);
-  const [blue1, setBlue1] = useState<number>(0);
-  const [blue2, setBlue2] = useState<number>(0);
-
   // Alliance Playoffs Simulator (2 starters + optional backup)
   const [allyCap, setAllyCap] = useState<number>(0);
   const [allyPick1, setAllyPick1] = useState<number>(0);
@@ -131,10 +125,6 @@ export default function RagnarokAnalyticsPage() {
       setPayload(data);
       if (data.teams.length > 0) {
         setSelectedTeamNum((prev) => (prev && data.teams.some((t) => t.team === prev) ? prev : data.teams[0].team));
-        setRed1((prev) => prev || data.teams[0]?.team || 0);
-        setRed2((prev) => prev || data.teams[1]?.team || data.teams[0]?.team || 0);
-        setBlue1((prev) => prev || data.teams[2]?.team || data.teams[0]?.team || 0);
-        setBlue2((prev) => prev || data.teams[3]?.team || data.teams[1]?.team || 0);
         setAllyCap((prev) => prev || data.teams[0]?.team || 0);
         setAllyPick1((prev) => prev || data.teams[1]?.team || 0);
         setOpp1((prev) => prev || data.teams[2]?.team || data.teams[0]?.team || 0);
@@ -285,23 +275,6 @@ export default function RagnarokAnalyticsPage() {
     for (const t of teams) m.set(t.team, t);
     return m;
   }, [teams]);
-
-  // Apply FTCScout schedule teams automatically when changing matchNum
-  useEffect(() => {
-    if (!scheduleMatches.length) return;
-    const found =
-      scheduleMatches.find((m) => m.matchNum === matchNum && m.tournamentLevel === 'Quals') ||
-      scheduleMatches.find((m) => m.matchNum === matchNum);
-    if (!found) return;
-    const r1 = found.teams.find((t) => t.alliance === 'Red' && t.station === 'One')?.teamNumber;
-    const r2 = found.teams.find((t) => t.alliance === 'Red' && t.station === 'Two')?.teamNumber;
-    const b1 = found.teams.find((t) => t.alliance === 'Blue' && t.station === 'One')?.teamNumber;
-    const b2 = found.teams.find((t) => t.alliance === 'Blue' && t.station === 'Two')?.teamNumber;
-    if (r1) setRed1(r1);
-    if (r2) setRed2(r2);
-    if (b1) setBlue1(b1);
-    if (b2) setBlue2(b2);
-  }, [scheduleMatches, matchNum]);
 
   const activateEvent = async (rawCode: string) => {
     const code = rawCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
@@ -499,9 +472,6 @@ export default function RagnarokAnalyticsPage() {
     };
   };
 
-  const redAllianceProj = aggregateAlliance([red1, red2]);
-  const blueAllianceProj = aggregateAlliance([blue1, blue2]);
-
   const timestoneData = payload?.timestone;
   const activeEventCode = loadedEvent?.code || timestoneData?.eventCode || '';
   const availableEventOptions = useMemo(() => {
@@ -510,40 +480,6 @@ export default function RagnarokAnalyticsPage() {
     if (timestoneData?.eventCode) set.add(timestoneData.eventCode);
     return Array.from(set).filter(Boolean).sort();
   }, [timestoneData?.availableEvents, timestoneData?.eventCode, loadedEvent?.code]);
-
-  const timestoneMatch = useMemo(() => {
-    const list = timestoneData?.matches || [];
-    if (!list.length) return null;
-    const byNum =
-      list.find((m) => m.match === matchNum && m.nivel.toUpperCase() === 'QUALS') ||
-      list.find((m) => m.match === matchNum);
-    if (!byNum) return null;
-    const sameTeams =
-      byNum.red1 === red1 && byNum.red2 === red2 && byNum.blue1 === blue1 && byNum.blue2 === blue2;
-    return sameTeams ? byNum : null;
-  }, [timestoneData?.matches, matchNum, red1, red2, blue1, blue2]);
-
-  const fallbackRedWinProb =
-    redAllianceProj.net + blueAllianceProj.net > 0
-      ? Math.round((Math.max(1, redAllianceProj.net) / (Math.max(1, redAllianceProj.net) + Math.max(1, blueAllianceProj.net))) * 100)
-      : 50;
-  const redWinProb = timestoneMatch ? timestoneMatch.redWinPct : fallbackRedWinProb;
-  const blueWinProb = timestoneMatch ? timestoneMatch.blueWinPct : 100 - fallbackRedWinProb;
-
-  const matchFieldMarkers: FieldMarker[] = [
-    ...redAllianceProj.members.map((m, idx) => ({
-      slot: `R${idx + 1}`,
-      team: m.team,
-      startPos: m.topStartPos,
-      alliance: 'red' as const,
-    })),
-    ...blueAllianceProj.members.map((m, idx) => ({
-      slot: `A${idx + 1}`,
-      team: m.team,
-      startPos: m.topStartPos,
-      alliance: 'blue' as const,
-    })),
-  ].filter((m) => m.startPos && m.startPos !== '—');
 
   const myAllianceProj = aggregateAlliance([allyCap, allyPick1, allySub]);
   const oppAllianceProj = aggregateAlliance([opp1, opp2, oppSub]);
@@ -624,7 +560,7 @@ export default function RagnarokAnalyticsPage() {
               [
                 { id: 'ranking', label: 'Ranking & Picklist' },
                 { id: 'equipo', label: 'Perfil de Equipo' },
-                { id: 'match', label: 'Match 2v2' },
+                { id: 'match', label: 'Horario Matches' },
                 { id: 'alianza', label: 'Simulador Alianzas' },
                 { id: 'perfect_match', label: '✦ Match Perfecto', featured: true },
                 { id: 'standings', label: 'Standings Proy.' },
@@ -1905,183 +1841,33 @@ export default function RagnarokAnalyticsPage() {
           </>
         )}
 
-        {/* ================= 3. MATCH BREAKDOWN 2v2 ================= */}
+        {/* ================= 3. HORARIO DE MATCHES EXPANDIBLE ================= */}
         {tab === 'match' && (
-          <>
-            <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <span className="panel-title">Match #:</span>
-                <button type="button" onClick={() => setMatchNum((m) => Math.max(1, m - 1))} className="btn-ghost">‹</button>
-                <input
-                  type="number"
-                  min={1}
-                  value={matchNum}
-                  onChange={(e) => setMatchNum(Math.max(1, Number(e.target.value) || 1))}
-                  className="input-rag tabular"
-                  style={{ width: '68px', textAlign: 'center' }}
-                />
-                <button type="button" onClick={() => setMatchNum((m) => m + 1)} className="btn-ghost">›</button>
-                {loadedEvent && (
-                  <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--accent-emerald)', marginLeft: '6px' }}>
-                    {loadedEvent.code} ({loadedEvent.season})
-                  </span>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <select value={eventSeason} onChange={(e) => setEventSeason(Number(e.target.value))} className="select-rag tabular">
-                  <option value={2026}>2026</option>
-                  <option value={2025}>2025</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="Código evento (ej. MXCMP)"
-                  value={eventCodeInput}
-                  onChange={(e) => setEventCodeInput(e.target.value)}
-                  className="input-rag"
-                  style={{ width: '175px' }}
-                />
-                <button type="button" onClick={handleLoadEvent} disabled={loadingEvent} className="btn-rag">
-                  {loadingEvent ? '...' : 'Cargar FTCScout'}
-                </button>
-              </div>
-              {eventError && <div style={{ width: '100%', fontSize: '11px', color: 'var(--rag-coral)' }}>{eventError}</div>}
-            </div>
-
-            {/* Win Probability Bar */}
-            <div className="panel" style={{ padding: '14px 16px' }}>
-              <div className="tabular" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '13px', fontWeight: 900, flexWrap: 'wrap', gap: '8px' }}>
-                <span style={{ color: 'var(--rag-crimson)' }}>
-                  ROJA PROYECTADA: {timestoneMatch ? timestoneMatch.redEst.toFixed(0) : redAllianceProj.net.toFixed(1)} PTS ({redWinProb.toFixed(1)}%)
-                  {timestoneMatch && (
-                    <span style={{ marginLeft: '8px', fontSize: '11px', color: 'var(--rag-coral)' }}>
-                      • {timestoneMatch.redRpsEst.toFixed(2)} xRP
-                    </span>
-                  )}
-                </span>
-                {timestoneMatch ? (
-                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: 'var(--bey-purple)', background: 'var(--bey-plum)', padding: '2px 8px', borderRadius: '4px' }}>
-                    MONTE CARLO TIMESTONE
-                    {timestoneMatch.tiePct > 0 ? ` • Empate ${timestoneMatch.tiePct.toFixed(1)}%` : ''}
-                    {timestoneMatch.jugado && timestoneMatch.redReal !== null && timestoneMatch.blueReal !== null
-                      ? ` • REAL: ${timestoneMatch.redReal} - ${timestoneMatch.blueReal}`
-                      : ''}
-                  </span>
-                ) : null}
-                <span style={{ color: 'var(--accent-cyan)' }}>
-                  AZUL PROYECTADA: {timestoneMatch ? timestoneMatch.blueEst.toFixed(0) : blueAllianceProj.net.toFixed(1)} PTS ({blueWinProb.toFixed(1)}%)
-                  {timestoneMatch && (
-                    <span style={{ marginLeft: '8px', fontSize: '11px', color: '#7DD3FC' }}>
-                      • {timestoneMatch.blueRpsEst.toFixed(2)} xRP
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div style={{ height: '10px', width: '100%', background: 'var(--accent-cyan)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                <div style={{ width: `${redWinProb}%`, background: 'var(--rag-crimson)' }} />
-                {timestoneMatch && timestoneMatch.tiePct > 0 && (
-                  <div style={{ width: `${timestoneMatch.tiePct}%`, background: 'var(--accent-amber)' }} />
-                )}
-              </div>
-            </div>
-
-            <div className="match-2col">
-              {/* Alianza Roja */}
-              <div className="panel" style={{ borderTop: '3px solid var(--rag-crimson)' }}>
-                <div className="panel-header">
-                  <span className="panel-title" style={{ color: 'var(--rag-coral)' }}>Alianza Roja (R1 + R2)</span>
-                  <span className="tabular" style={{ fontSize: '12px', fontWeight: 800, color: redAllianceProj.swarmPts >= 16 ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
-                    Swarm: {redAllianceProj.swarmPts.toFixed(1)} / 16 pts
-                  </span>
-                </div>
-
-                {redAllianceProj.hasCollision && (
-                  <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '4px', background: 'rgba(255, 209, 102, 0.14)', border: '1px solid var(--accent-amber)', fontSize: '11px', fontWeight: 700, color: 'var(--accent-amber)' }}>
-                    Alerta Auto: ambos aliados arrancan en la misma zona ({redAllianceProj.startZones[0]}).
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
-                  {[
-                    { label: 'Rojo 1', val: red1, set: setRed1 },
-                    { label: 'Rojo 2', val: red2, set: setRed2 },
-                  ].map((slot) => (
-                    <div key={slot.label}>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{slot.label}</div>
-                      <select value={slot.val} onChange={(e) => slot.set(Number(e.target.value))} className="select-rag tabular" style={{ width: '100%' }}>
-                        <option value={0}>Elegir equipo</option>
-                        {teams.map((t) => (
-                          <option key={t.team} value={t.team}>#{t.team} (EPA {t.epaNetAvg.toFixed(1)})</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-
-                <AllianceRobotsCards members={redAllianceProj.members} accent="var(--rag-crimson)" onSelect={openTeamProfile} />
-              </div>
-
-              {/* Alianza Azul */}
-              <div className="panel" style={{ borderTop: '3px solid var(--accent-cyan)' }}>
-                <div className="panel-header">
-                  <span className="panel-title" style={{ color: 'var(--accent-cyan)' }}>Alianza Azul (A1 + A2)</span>
-                  <span className="tabular" style={{ fontSize: '12px', fontWeight: 800, color: blueAllianceProj.swarmPts >= 16 ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
-                    Swarm: {blueAllianceProj.swarmPts.toFixed(1)} / 16 pts
-                  </span>
-                </div>
-
-                {blueAllianceProj.hasCollision && (
-                  <div style={{ marginBottom: '10px', padding: '8px 10px', borderRadius: '4px', background: 'rgba(255, 209, 102, 0.14)', border: '1px solid var(--accent-amber)', fontSize: '11px', fontWeight: 700, color: 'var(--accent-amber)' }}>
-                    Alerta Auto: ambos aliados arrancan en la misma zona ({blueAllianceProj.startZones[0]}).
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
-                  {[
-                    { label: 'Azul 1', val: blue1, set: setBlue1 },
-                    { label: 'Azul 2', val: blue2, set: setBlue2 },
-                  ].map((slot) => (
-                    <div key={slot.label}>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '4px' }}>{slot.label}</div>
-                      <select value={slot.val} onChange={(e) => slot.set(Number(e.target.value))} className="select-rag tabular" style={{ width: '100%' }}>
-                        <option value={0}>Elegir equipo</option>
-                        {teams.map((t) => (
-                          <option key={t.team} value={t.team}>#{t.team} (EPA {t.epaNetAvg.toFixed(1)})</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-
-                <AllianceRobotsCards members={blueAllianceProj.members} accent="var(--accent-cyan)" onSelect={openTeamProfile} />
-              </div>
-            </div>
-
-            {/* Face-off Bars + Combined Field Start Map */}
-            <div className="split-2col">
-              <DuelComparisonBars
-                leftTitle="ROJA"
-                rightTitle="AZUL"
-                metrics={[
-                  { label: 'Auto Prom.', leftVal: redAllianceProj.auto, rightVal: blueAllianceProj.auto },
-                  { label: 'TeleOp Prom.', leftVal: redAllianceProj.tele, rightVal: blueAllianceProj.tele },
-                  { label: 'Balancín (P+N)', leftVal: redAllianceProj.balancin, rightVal: blueAllianceProj.balancin },
-                  { label: 'Flor (P+N)', leftVal: redAllianceProj.flor, rightVal: blueAllianceProj.flor },
-                  { label: 'Garden', leftVal: redAllianceProj.garden, rightVal: blueAllianceProj.garden },
-                  { label: 'Swarm Pts', leftVal: redAllianceProj.swarmPts, rightVal: blueAllianceProj.swarmPts },
-                  { label: 'Faltas', leftVal: redAllianceProj.fouls, rightVal: blueAllianceProj.fouls, lowerIsBetter: true },
-                ]}
-              />
-
-              <div className="panel">
-                <div className="panel-header">
-                  <span className="panel-title">Posiciones Esperadas en Auto (4 Robots)</span>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>Amarillo = Empalme</span>
-                </div>
-                <RagnarokFieldHeatmap markers={matchFieldMarkers} />
-              </div>
-            </div>
-          </>
+          <MatchScheduleView
+            teams={teams}
+            teamMap={teamMap}
+            timestoneMatches={timestoneData?.matches || []}
+            scheduleMatches={scheduleMatches}
+            activeEventCode={activeEventCode}
+            loadedEvent={loadedEvent}
+            eventSeason={eventSeason}
+            eventCodeInput={eventCodeInput}
+            loadingEvent={loadingEvent}
+            eventError={eventError}
+            onChangeEventSeason={setEventSeason}
+            onChangeEventCodeInput={setEventCodeInput}
+            onLoadEvent={handleLoadEvent}
+            onOpenTeamProfile={openTeamProfile}
+            onSendToAllianceSim={(r1, r2, b1, b2) => {
+              setAllyCap(r1);
+              setAllyPick1(r2);
+              setAllySub(0);
+              setOpp1(b1);
+              setOpp2(b2);
+              setOppSub(0);
+              setTab('alianza');
+            }}
+          />
         )}
 
         {/* ================= 4. SIMULADOR DE ALIANZAS (PLAYOFFS) ================= */}

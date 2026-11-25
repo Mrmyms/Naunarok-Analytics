@@ -213,6 +213,10 @@ export interface ScheduleMatch {
   id: number;
   matchNum: number;
   tournamentLevel: string;
+  hasBeenPlayed?: boolean;
+  scheduledStartTime?: string | null;
+  actualStartTime?: string | null;
+  description?: string | null;
   teams: ScheduleTeam[];
 }
 

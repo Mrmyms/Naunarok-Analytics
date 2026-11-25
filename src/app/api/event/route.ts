@@ -25,6 +25,10 @@ const EVENT_BY_CODE_QUERY = `
         id
         matchNum
         tournamentLevel
+        hasBeenPlayed
+        scheduledStartTime
+        actualStartTime
+        description
         teams {
           teamNumber
           alliance
