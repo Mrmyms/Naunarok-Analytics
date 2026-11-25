@@ -91,49 +91,44 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 14px;
-  padding: 5px 18px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background:
-    linear-gradient(105deg, rgba(255, 209, 102, 0.12) 0%, rgba(14, 16, 24, 0.96) 44%, rgba(168, 85, 247, 0.1) 54%, rgba(225, 29, 72, 0.14) 100%) padding-box,
-    linear-gradient(105deg, rgba(255, 209, 102, 0.72) 0%, rgba(168, 85, 247, 0.55) 50%, rgba(225, 29, 72, 0.78) 100%) border-box;
-  box-shadow:
-    -10px 0 24px -8px rgba(255, 209, 102, 0.4),
-    10px 0 24px -8px rgba(225, 29, 72, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  padding: 0 18px;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  opacity: 0.92;
+  transition: opacity 0.18s ease;
   user-select: none;
 }
 
 .collab-lockup:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    -12px 0 28px -6px rgba(255, 209, 102, 0.55),
-    12px 0 28px -6px rgba(225, 29, 72, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  opacity: 1;
 }
 
 .collab-logo-nautilus {
-  height: 40px;
+  height: 34px;
   width: auto;
   display: block;
   object-fit: contain;
-  filter: drop-shadow(0 0 10px rgba(255, 209, 102, 0.6));
+  filter: brightness(0) invert(0.96) drop-shadow(0 0 8px rgba(248, 250, 252, 0.14));
 }
 
 .collab-logo-ragnarok {
-  height: 48px;
+  height: 42px;
   width: auto;
   display: block;
   object-fit: contain;
-  filter: drop-shadow(0 0 11px rgba(225, 29, 72, 0.6));
+  filter: drop-shadow(0 0 8px rgba(248, 250, 252, 0.12));
 }
 
 .collab-x-icon {
-  width: 24px;
-  height: 24px;
+  width: 13px;
+  height: 13px;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 9px rgba(168, 85, 247, 0.7));
+  color: var(--text-muted);
+  transition: color 0.18s ease;
+}
+
+.collab-lockup:hover .collab-x-icon {
+  color: var(--text-white);
 }
 
 .brand-mark {
@@ -415,18 +410,20 @@ body {
     padding: 10px 12px;
   }
   .collab-lockup {
-    gap: 8px;
-    padding: 4px 10px;
+    gap: 10px;
+    padding: 0 10px;
+    border-left: none;
+    border-right: none;
   }
   .collab-logo-nautilus {
-    height: 28px;
+    height: 26px;
   }
   .collab-logo-ragnarok {
-    height: 34px;
+    height: 32px;
   }
   .collab-x-icon {
-    width: 18px;
-    height: 18px;
+    width: 11px;
+    height: 11px;
   }
 }
 

@@ -528,36 +528,17 @@ export default function RagnarokAnalyticsPage() {
               className="collab-logo-nautilus"
             />
             <svg
-              viewBox="0 0 24 24"
+              viewBox="0 0 16 16"
               fill="none"
               className="collab-x-icon"
               aria-hidden="true"
             >
-              <defs>
-                <linearGradient id="collabSlashA" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#FFD166" />
-                  <stop offset="50%" stopColor="#F8FAFC" />
-                  <stop offset="100%" stopColor="#E11D48" />
-                </linearGradient>
-                <linearGradient id="collabSlashB" x1="100%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#E11D48" />
-                  <stop offset="50%" stopColor="#F8FAFC" />
-                  <stop offset="100%" stopColor="#FFD166" />
-                </linearGradient>
-              </defs>
               <path
-                d="M4.5 4.5L19.5 19.5"
-                stroke="url(#collabSlashA)"
-                strokeWidth="2.8"
+                d="M3 3L13 13M13 3L3 13"
+                stroke="currentColor"
+                strokeWidth="1.9"
                 strokeLinecap="round"
               />
-              <path
-                d="M19.5 4.5L4.5 19.5"
-                stroke="url(#collabSlashB)"
-                strokeWidth="2.8"
-                strokeLinecap="round"
-              />
-              <polygon points="12,9.4 14.6,12 12,14.6 9.4,12" fill="#F8FAFC" />
             </svg>
             <img
               src="/ragnarok-logo.svg"
