@@ -387,7 +387,6 @@ export async function GET(request: Request) {
         team: teamNum,
         teamName: String(r[2] ?? '').trim(),
         scouter: String(r[3] ?? '').trim(),
-        robotType: String(r[19] ?? '').trim(),
         chassisType: String(r[4] ?? '').trim(),
         weightLb: weightNum,
         intakeType: String(r[6] ?? '').trim(),

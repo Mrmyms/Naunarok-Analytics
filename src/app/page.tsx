@@ -56,7 +56,6 @@ export default function RagnarokAnalyticsPage() {
   // Ranking filters & picklist state
   const [searchTeam, setSearchTeam] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | RobotRole>('ALL');
-  const [robotTypeFilter, setRobotTypeFilter] = useState<string>('ALL');
   const [scoringProfile, setScoringProfile] = useState<ScoringProfileId>('balanced');
   const [onlyReliable, setOnlyReliable] = useState(false);
   const [onlyLowFouls, setOnlyLowFouls] = useState(false);
@@ -377,14 +376,6 @@ export default function RagnarokAnalyticsPage() {
     [teams]
   );
 
-  const availableRobotTypes = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of teams) {
-      if (t.pit?.robotType) set.add(t.pit.robotType);
-    }
-    return Array.from(set).sort();
-  }, [teams]);
-
   const filteredTeams = useMemo(() => {
     const tagPriority: Record<PickTag, number> = { top: 0, pick: 1, none: 2, avoid: 3, drafted: 4 };
     const q = searchTeam.trim().toLowerCase();
@@ -407,7 +398,6 @@ export default function RagnarokAnalyticsPage() {
           if (!teamStr.includes(q) && !pitName.includes(q) && !tsName.includes(q)) return false;
         }
         if (roleFilter !== 'ALL' && detectRobotRole(t).role !== roleFilter) return false;
-        if (robotTypeFilter !== 'ALL' && (t.pit?.robotType || '') !== robotTypeFilter) return false;
         if (onlyReliable && t.reliabilityPct < 70) return false;
         if (onlyLowFouls && t.foulsAvg > 15) return false;
         if (onlyWithPit && !t.pit) return false;
@@ -432,7 +422,6 @@ export default function RagnarokAnalyticsPage() {
     teams,
     searchTeam,
     roleFilter,
-    robotTypeFilter,
     onlyReliable,
     onlyLowFouls,
     onlyWithPit,
@@ -451,10 +440,10 @@ export default function RagnarokAnalyticsPage() {
       setSortKey(key);
       setSortAsc(
         key === 'rank' ||
-          key === 'team' ||
-          key === 'foulsAvg' ||
-          key === 'dpr' ||
-          key === 'rankCombAvg'
+        key === 'team' ||
+        key === 'foulsAvg' ||
+        key === 'dpr' ||
+        key === 'rankCombAvg'
       );
     }
   };
@@ -931,32 +920,8 @@ export default function RagnarokAnalyticsPage() {
                     value={searchTeam}
                     onChange={(e) => setSearchTeam(e.target.value)}
                     className="input-rag tabular"
-                    style={{ width: '155px' }}
+                    style={{ width: '165px' }}
                   />
-
-                  <select
-                    value={robotTypeFilter}
-                    onChange={(e) => setRobotTypeFilter(e.target.value)}
-                    className="select-rag"
-                    title="Filtrar por Tipo de Robot (Pit)"
-                  >
-                    <option value="ALL">Tipo: Todos</option>
-                    {Array.from(
-                      new Set([
-                        'Torreta',
-                        'Dumper',
-                        'Shooter fijo',
-                        'Brazo / Elevador',
-                        'Defensa / Pushbot',
-                        'Híbrido',
-                        ...availableRobotTypes,
-                      ])
-                    ).map((rt) => (
-                      <option key={rt} value={rt}>
-                        Tipo: {rt}
-                      </option>
-                    ))}
-                  </select>
 
                   {(['ALL', 'BALANCÍN', 'FLOR', 'HÍBRIDO'] as const).map((r) => (
                     <button
@@ -1027,7 +992,6 @@ export default function RagnarokAnalyticsPage() {
                       </th>
                     ))}
                     <th>Rol</th>
-                    <th>Tipo</th>
                     <th>Pit</th>
                     {[
                       { k: 'matchesPlayed', l: 'PJ' },
@@ -1066,7 +1030,7 @@ export default function RagnarokAnalyticsPage() {
                   {filteredTeams.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={20 + (hasOprDpr ? 4 : 0) + (timestoneData?.available ? 1 : 0)}
+                        colSpan={19 + (hasOprDpr ? 4 : 0) + (timestoneData?.available ? 1 : 0)}
                         style={{ padding: '28px', color: 'var(--text-muted)' }}
                       >
                         {loading ? 'Cargando datos...' : 'Sin equipos que coincidan con el filtro.'}
@@ -1151,9 +1115,6 @@ export default function RagnarokAnalyticsPage() {
                             >
                               {roleMeta.role}
                             </span>
-                          </td>
-                          <td style={{ fontSize: '11px', color: t.pit?.robotType ? 'var(--accent-amber)' : 'var(--text-muted)', fontWeight: t.pit?.robotType ? 700 : 500 }}>
-                            {t.pit?.robotType || '—'}
                           </td>
                           <td>
                             {t.pit ? (
@@ -1524,19 +1485,19 @@ export default function RagnarokAnalyticsPage() {
                             { label: 'EPA Neto', leftVal: selectedTeam.epaNetAvg, rightVal: compareTeam.epaNetAvg },
                             ...(selectedTeam.timestone?.opr != null && compareTeam.timestone?.opr != null
                               ? [
-                                  { label: 'OPR', leftVal: selectedTeam.timestone.opr, rightVal: compareTeam.timestone.opr },
-                                  {
-                                    label: 'DPR (menor=mejor)',
-                                    leftVal: selectedTeam.timestone.dpr ?? 0,
-                                    rightVal: compareTeam.timestone.dpr ?? 0,
-                                    lowerIsBetter: true,
-                                  },
-                                  {
-                                    label: 'CCWM (OPR−DPR)',
-                                    leftVal: selectedTeam.timestone.ccwm ?? 0,
-                                    rightVal: compareTeam.timestone.ccwm ?? 0,
-                                  },
-                                ]
+                                { label: 'OPR', leftVal: selectedTeam.timestone.opr, rightVal: compareTeam.timestone.opr },
+                                {
+                                  label: 'DPR (menor=mejor)',
+                                  leftVal: selectedTeam.timestone.dpr ?? 0,
+                                  rightVal: compareTeam.timestone.dpr ?? 0,
+                                  lowerIsBetter: true,
+                                },
+                                {
+                                  label: 'CCWM (OPR−DPR)',
+                                  leftVal: selectedTeam.timestone.ccwm ?? 0,
+                                  rightVal: compareTeam.timestone.ccwm ?? 0,
+                                },
+                              ]
                               : []),
                             { label: 'Auto Prom', leftVal: selectedTeam.autoAvg, rightVal: compareTeam.autoAvg },
                             { label: 'TeleOp Prom', leftVal: selectedTeam.teleAvg, rightVal: compareTeam.teleAvg },

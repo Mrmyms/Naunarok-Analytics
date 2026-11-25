@@ -129,7 +129,6 @@ export interface PitProfile {
   team: number;
   teamName: string;
   scouter: string;
-  robotType: string;
   chassisType: string;
   weightLb: number | null;
   intakeType: string;

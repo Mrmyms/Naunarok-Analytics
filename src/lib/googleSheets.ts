@@ -176,7 +176,7 @@ export async function fetchPitScoutingData(): Promise<{
 
   const ranges: { key: 'pit' | 'photos'; range: string }[] = [];
   if (titles.includes('Pit_BIOBUZZ')) {
-    ranges.push({ key: 'pit', range: 'Pit_BIOBUZZ!A1:T1000' });
+    ranges.push({ key: 'pit', range: 'Pit_BIOBUZZ!A1:S1000' });
   }
   if (titles.includes('Pit_Fotos')) {
     ranges.push({ key: 'photos', range: 'Pit_Fotos!A2:I50000' });
