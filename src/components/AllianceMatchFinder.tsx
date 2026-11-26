@@ -253,11 +253,6 @@ export default function AllianceMatchFinder({
             <h1 style={{ fontSize: '22px', fontWeight: 900, letterSpacing: '0.4px', color: '#FFFFFF', margin: 0 }}>
               MATCH PERFECTO
             </h1>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '640px' }}>
-              Encuentra al socio ideal para tu alianza combinando <strong style={{ color: 'var(--text-silver)' }}>OPR / DPR</strong>, sinergia{' '}
-              <strong style={{ color: 'var(--text-silver)' }}>Balancín + Flor + Garden</strong>, rutas de{' '}
-              <strong style={{ color: 'var(--text-silver)' }}>Autónomo sin choque</strong> y confiabilidad en Playoffs.
-            </p>
           </div>
 
           {/* Selector de Capitán + Telemetría en vivo */}
@@ -375,9 +370,6 @@ export default function AllianceMatchFinder({
                 );
               })}
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              {MATCH_STRATEGY_MODES[mode].description}
-            </span>
           </div>
 
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -537,7 +529,7 @@ export default function AllianceMatchFinder({
                     {spotlight.projectedSwarmPts.toFixed(1)} / 16
                   </div>
                   <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                    {spotlight.projectedSwarmPts >= 16 ? '✓ Umbral RP cubierto' : 'Faltan puntos Leave/Park'}
+                    {spotlight.projectedSwarmPts >= 16 ? '✓ RP' : '—'}
                   </div>
                 </div>
 
@@ -562,9 +554,11 @@ export default function AllianceMatchFinder({
                       ? 'Sin rival'
                       : `${spotlight.marginVsRival >= 0 ? '+' : ''}${spotlight.marginVsRival.toFixed(1)} pts`}
                   </div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                    {rivalProjectedNet !== null ? `Rival: ${rivalProjectedNet.toFixed(1)} pts` : 'Configura rival en Simulador'}
-                  </div>
+                  {rivalProjectedNet !== null && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                      Rival: {rivalProjectedNet.toFixed(1)} pts
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '9px 11px' }}>
@@ -734,12 +728,7 @@ export default function AllianceMatchFinder({
       {recommendations.length > 0 && (
         <section className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="panel-header" style={{ marginBottom: 0, flexWrap: 'wrap', gap: '8px' }}>
-            <div>
-              <span className="panel-title">Candidatos Compatibles ({recommendations.length})</span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '10px' }}>
-                Haz clic en cualquier tarjeta para inspeccionar su match y mapa de Auto arriba
-              </span>
-            </div>
+            <span className="panel-title">Candidatos Compatibles ({recommendations.length})</span>
 
             {recommendations.length > 6 && (
               <div style={{ display: 'flex', gap: '6px' }}>

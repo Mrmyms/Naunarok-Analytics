@@ -206,17 +206,28 @@ export interface AnalyticsPayload {
 export interface ScheduleTeam {
   teamNumber: number;
   alliance: 'Red' | 'Blue';
-  station: 'One' | 'Two';
+  station: 'One' | 'Two' | 'Three' | string;
+  surrogate?: boolean;
 }
 
 export interface ScheduleMatch {
   id: number;
   matchNum: number;
+  series?: number;
   tournamentLevel: string;
   hasBeenPlayed?: boolean;
   scheduledStartTime?: string | null;
   actualStartTime?: string | null;
   description?: string | null;
   teams: ScheduleTeam[];
+  scores?: {
+    red?: { totalPoints?: number | null; totalPointsNp?: number | null } | null;
+    blue?: { totalPoints?: number | null; totalPointsNp?: number | null } | null;
+  } | null;
+}
+
+export interface EventRosterTeam {
+  teamNumber: number;
+  name: string;
 }
 

@@ -89,14 +89,17 @@ export default function TeamRadarChart({
               <line x1={cx} y1={cy} x2={outer.x} y2={outer.y} stroke="#23283D" strokeWidth="1" />
               <text
                 x={lbl.x}
-                y={lbl.y}
+                y={lbl.y - 4}
                 textAnchor="middle"
                 dominantBaseline="central"
                 fill={labelColor}
-                fontSize="8.5"
+                fontSize="8"
                 fontWeight="800"
               >
-                {ax.label}
+                <tspan x={lbl.x}>{ax.label}</tspan>
+                <tspan x={lbl.x} dy="10" fill="#F8FAFC" fontSize="8" fontWeight="900">
+                  {ax.raw}
+                </tspan>
               </text>
             </g>
           );

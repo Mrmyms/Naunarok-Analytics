@@ -95,9 +95,9 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
     .sort();
 
   const requestedClean = (requestedEvent || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-  const envEvent = (process.env.TIMESTONE_EVENT || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  const envEvent = (process.env.TIMESTONE_EVENT || 'MXTLQ').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
 
-  const resolvedEvent = requestedClean || envEvent || availableEvents[0] || '';
+  const resolvedEvent = requestedClean || envEvent || availableEvents[0] || 'MXTLQ';
 
   if (!resolvedEvent) {
     return {

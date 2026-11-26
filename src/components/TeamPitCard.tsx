@@ -104,22 +104,9 @@ export default function TeamPitCard({ team }: { team: TeamAnalytics }) {
             Ficha Técnica de Pits • #{team.team}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Sin ficha de Pit Scouting registrada para #{team.team}.
+            Sin ficha de Pit Scouting registrada.
           </div>
         </div>
-        <span
-          style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: 'var(--text-muted)',
-            background: 'var(--bg-carbon)',
-            border: '1px solid var(--border-steel)',
-            borderRadius: '4px',
-            padding: '5px 10px',
-          }}
-        >
-          Se sincroniza automáticamente desde Pit_BIOBUZZ
-        </span>
       </div>
     );
   }

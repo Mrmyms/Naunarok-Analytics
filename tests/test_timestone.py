@@ -382,3 +382,106 @@ class TestOprDprEngine:
             }
         ])
         assert ts.compute_event_opr_dpr(unplayed, [1001, 1002, 1003, 1004]) == {}
+
+
+class TestScheduleEdgeCases:
+    def test_double_elim_series_do_not_collide_and_station_two_preserved(self):
+        sample_event = {
+            "matches": [
+                {
+                    "id": 21001,
+                    "matchNum": 1,
+                    "series": 1,
+                    "tournamentLevel": "DoubleElim",
+                    "hasBeenPlayed": True,
+                    "teams": [
+                        {"teamNumber": 101, "alliance": "Red", "station": "One"},
+                        {"teamNumber": 102, "alliance": "Red", "station": "Two"},
+                        {"teamNumber": 103, "alliance": "Blue", "station": "One"},
+                        {"teamNumber": 104, "alliance": "Blue", "station": "Two"},
+                    ],
+                    "scores": {"red": {"totalPoints": 90}, "blue": {"totalPoints": 70}},
+                },
+                {
+                    "id": 22001,
+                    "matchNum": 1,
+                    "series": 2,
+                    "tournamentLevel": "DoubleElim",
+                    "hasBeenPlayed": True,
+                    "teams": [
+                        {"teamNumber": 105, "alliance": "Red", "station": "One"},
+                        {"teamNumber": 106, "alliance": "Red", "station": "Two"},
+                        {"teamNumber": 107, "alliance": "Blue", "station": "One"},
+                        {"teamNumber": 108, "alliance": "Blue", "station": "Two"},
+                    ],
+                    "scores": {"red": {"totalPoints": 80}, "blue": {"totalPoints": 85}},
+                },
+                {
+                    "id": 30001,
+                    "matchNum": 1,
+                    "series": 0,
+                    "tournamentLevel": "Finals",
+                    "hasBeenPlayed": True,
+                    "teams": [
+                        {"teamNumber": 20515, "alliance": "Red", "station": "Two"},
+                        {"teamNumber": 19389, "alliance": "Blue", "station": "Two"},
+                    ],
+                    "scores": {"red": {"totalPoints": 39}, "blue": {"totalPoints": 29}},
+                },
+            ]
+        }
+        df = ts._parse_ftcscout_matches(sample_event)
+        double_elims = df[df["tournament_level"] == "DoubleElim"]
+        assert list(double_elims["match_code"]) == [1, 2]
+        finals = df[df["tournament_level"] == "Finals"].iloc[0]
+        assert int(finals["RED1"]) == 20515
+        assert int(finals["BLUE1"]) == 19389
+
+    def test_ftcscout_event_without_matches_does_not_leak_generic_matches_tab(self, monkeypatch):
+        class FakeWorksheet:
+            def __init__(self, title, records):
+                self.title = title
+                self._records = records
+
+            def get_all_records(self):
+                return self._records
+
+        class FakeSpreadsheet:
+            def __init__(self):
+                self._sheets = {
+                    "Captura_BIOBUZZ": FakeWorksheet("Captura_BIOBUZZ", [
+                        {"MATCH": 1, "EQUIPO": 24777, "ALIANZA": "ROJO", "POSICIÓN INICIAL": "A"}
+                    ]),
+                    "Equipos": FakeWorksheet("Equipos", [
+                        {"Team ID": 4010, "Names": "Nautilus"}
+                    ]),
+                    "Matches": FakeWorksheet("Matches", [
+                        {"match_code": 1, "RED1": 24777, "RED2": 20311, "BLUE1": 26112, "BLUE2": 24109}
+                    ]),
+                }
+
+            def worksheets(self):
+                return list(self._sheets.values())
+
+            def worksheet(self, title):
+                return self._sheets[title]
+
+        monkeypatch.setattr(
+            ts,
+            "fetch_ftcscout_event",
+            lambda code, season=2026: {
+                "code": "USFLJAS",
+                "name": "Northeast Florida Scrimmage",
+                "teams": [
+                    {"teamNumber": 450, "team": {"number": 450, "name": "Children of the Swamp"}},
+                    {"teamNumber": 641, "team": {"number": 641, "name": "Tater Scots"}},
+                ],
+                "matches": [],
+            },
+        )
+
+        scouting_df, teams_df, matches_df = ts.load_event_data(
+            FakeSpreadsheet(), event_code="USFLJAS", season=2026, use_ftcscout=True
+        )
+        assert list(teams_df["Team ID"]) == [450, 641]
+        assert matches_df.empty

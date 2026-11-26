@@ -51,7 +51,7 @@ from gspread_dataframe import set_with_dataframe
 # CELL 0 — Configuración de Evento, Credenciales y Utilidades de Entorno
 # ==============================================================================
 
-EVENT: str = os.environ.get("TIMESTONE_EVENT", "MXTO")
+EVENT: str = os.environ.get("TIMESTONE_EVENT", "MXTLQ")
 FTCSCOUT_CODE: Optional[str] = os.environ.get("TIMESTONE_FTCSCOUT_CODE") or None
 FTCSCOUT_SEASON: int = int(os.environ.get("TIMESTONE_SEASON", "2026"))
 SHEET_ID: str = os.environ.get(
@@ -515,8 +515,10 @@ query TimestoneEvent($season: Int!, $code: String!) {
     matches {
       id
       matchNum
+      series
       tournamentLevel
       hasBeenPlayed
+      scheduledStartTime
       teams {
         teamNumber
         alliance
@@ -649,6 +651,12 @@ def _parse_ftcscout_matches(event_data: Dict[str, Any]) -> pd.DataFrame:
         if m_num is None:
             continue
 
+        series = int(to_numeric_safe(m.get("series"), 0))
+        if level.upper() != "QUALS" and series > 0:
+            match_code = series if m_num == 1 else series * 100 + m_num
+        else:
+            match_code = m_num
+
         slots: Dict[str, int] = {"RED1": 0, "RED2": 0, "BLUE1": 0, "BLUE2": 0}
         surrogates: Dict[str, bool] = {
             "red1_surrogate": False,
@@ -657,20 +665,33 @@ def _parse_ftcscout_matches(event_data: Dict[str, Any]) -> pd.DataFrame:
             "blue2_surrogate": False,
         }
 
+        red_members: List[Tuple[int, str, bool]] = []
+        blue_members: List[Tuple[int, str, bool]] = []
+        station_order = {"ONE": 1, "TWO": 2, "THREE": 3}
+
         for tp in m.get("teams") or []:
             alliance = str(tp.get("alliance") or "").strip().upper()
             station = str(tp.get("station") or "").strip().upper()
             tid = int(to_numeric_safe(tp.get("teamNumber"), 0))
+            if tid <= 0:
+                continue
             is_surr = bool(tp.get("surrogate"))
+            if alliance == "RED":
+                red_members.append((station_order.get(station, 9), station, is_surr, tid))  # type: ignore[arg-type]
+            elif alliance == "BLUE":
+                blue_members.append((station_order.get(station, 9), station, is_surr, tid))  # type: ignore[arg-type]
 
-            if alliance == "RED" and station == "ONE":
-                slots["RED1"], surrogates["red1_surrogate"] = tid, is_surr
-            elif alliance == "RED" and station == "TWO":
-                slots["RED2"], surrogates["red2_surrogate"] = tid, is_surr
-            elif alliance == "BLUE" and station == "ONE":
-                slots["BLUE1"], surrogates["blue1_surrogate"] = tid, is_surr
-            elif alliance == "BLUE" and station == "TWO":
-                slots["BLUE2"], surrogates["blue2_surrogate"] = tid, is_surr
+        red_members.sort(key=lambda item: item[0])
+        blue_members.sort(key=lambda item: item[0])
+
+        if len(red_members) >= 1:
+            slots["RED1"], surrogates["red1_surrogate"] = red_members[0][3], red_members[0][2]  # type: ignore[index]
+        if len(red_members) >= 2:
+            slots["RED2"], surrogates["red2_surrogate"] = red_members[1][3], red_members[1][2]  # type: ignore[index]
+        if len(blue_members) >= 1:
+            slots["BLUE1"], surrogates["blue1_surrogate"] = blue_members[0][3], blue_members[0][2]  # type: ignore[index]
+        if len(blue_members) >= 2:
+            slots["BLUE2"], surrogates["blue2_surrogate"] = blue_members[1][3], blue_members[1][2]  # type: ignore[index]
 
         scores = m.get("scores") or {}
         red_s = scores.get("red")
@@ -678,7 +699,7 @@ def _parse_ftcscout_matches(event_data: Dict[str, Any]) -> pd.DataFrame:
         played = bool(m.get("hasBeenPlayed")) and red_s is not None and blue_s is not None
 
         rows.append({
-            "match_code": m_num,
+            "match_code": match_code,
             "tournament_level": level,
             "has_been_played": played,
             **slots,
@@ -846,12 +867,16 @@ def load_event_data(
     if use_ftcscout:
         lookup_code = (ftcscout_code or event_code).strip().upper()
         ftc_data = fetch_ftcscout_event(lookup_code, season=season)
+    ftc_found = ftc_data is not None
 
     # ── 3. CARGA DE EQUIPOS (SHEETS + FTCSCOUT + SCOUTING) ─────────────────────
-    teams_tab = next(
-        (t for t in (f"Equipos_{event_code}", "Equipos") if t in sheet_titles),
-        None,
+    ftc_teams_df = _parse_ftcscout_teams(ftc_data) if ftc_data else pd.DataFrame(columns=["Team ID", "Names"])
+    team_tab_candidates = (
+        (f"Equipos_{event_code}",)
+        if ftc_found and not ftc_teams_df.empty
+        else (f"Equipos_{event_code}", "Equipos")
     )
+    teams_tab = next((t for t in team_tab_candidates if t in sheet_titles), None)
     sheet_teams_df = pd.DataFrame(columns=["Team ID", "Names"])
     if teams_tab:
         raw_teams = _read_worksheet_df(spreadsheet, teams_tab)
@@ -864,8 +889,6 @@ def load_event_data(
                 raw_teams["Names"] = [f"Equipo {t}" for t in raw_teams["Team ID"]]
             sheet_teams_df = raw_teams[["Team ID", "Names"]].reset_index(drop=True)
 
-    ftc_teams_df = _parse_ftcscout_teams(ftc_data) if ftc_data else pd.DataFrame(columns=["Team ID", "Names"])
-
     # Priorizar nombres reales de FTCScout o de la pestaña Equipos
     name_lookup: Dict[int, str] = {}
     for _, r in ftc_teams_df.iterrows():
@@ -876,7 +899,18 @@ def load_event_data(
         if tid not in name_lookup or (sname and not sname.startswith("Equipo ")):
             name_lookup[tid] = sname
 
-    if not scouting_df.empty and "EQUIPO" in scouting_df.columns:
+    scouting_has_event_col = (
+        not scouting_df.empty
+        and "EVENTO" in scouting_df.columns
+        and scouting_df["EVENTO"].astype(str).str.strip().ne("").any()
+    )
+    allow_scouting_roster = (
+        not ftc_found
+        or ftc_teams_df.empty
+        or scouting_tab in (f"Scouting_{event_code}", f"Captura_{event_code}")
+        or scouting_has_event_col
+    )
+    if allow_scouting_roster and not scouting_df.empty and "EQUIPO" in scouting_df.columns:
         for tid in scouting_df["EQUIPO"].unique():
             tid_int = int(tid)
             if tid_int > 0 and tid_int not in name_lookup:
@@ -891,10 +925,12 @@ def load_event_data(
     if not ftc_matches_df.empty:
         matches_df = _ensure_match_defaults(ftc_matches_df)
     else:
-        matches_tab = next(
-            (t for t in (f"Matches_{event_code}", "Matches") if t in sheet_titles),
-            None,
+        match_tab_candidates = (
+            (f"Matches_{event_code}",)
+            if ftc_found
+            else (f"Matches_{event_code}", "Matches")
         )
+        matches_tab = next((t for t in match_tab_candidates if t in sheet_titles), None)
         if matches_tab:
             raw_matches = _read_worksheet_df(spreadsheet, matches_tab)
             raw_matches = _rename_with_aliases(raw_matches, MATCH_COLUMN_ALIASES)
@@ -905,6 +941,9 @@ def load_event_data(
                 raw_matches["match_code"] = raw_matches["match_code"].astype(int)
                 raw_matches = raw_matches.sort_values("match_code").reset_index(drop=True)
             matches_df = _ensure_match_defaults(raw_matches)
+        elif ftc_found:
+            print(f"[INFO] [{event_code}] Evento encontrado en FTCScout sin matches publicados todavía.")
+            matches_df = _ensure_match_defaults(pd.DataFrame())
         else:
             matches_list: List[Dict[str, Any]] = []
             if not scouting_df.empty and {"MATCH", "ALIANZA", "EQUIPO"}.issubset(scouting_df.columns):
@@ -2069,7 +2108,12 @@ def upload_dataframes(
     """Sube las 6 pestañas de salida a Google Sheets creando o limpiando cada hoja."""
     for tab_name, df in dataframes_dict.items():
         if df is None or df.empty:
-            print(f"[SKIP] '{tab_name}' está vacío, no se subió.")
+            try:
+                ws = gss_obj.worksheet(tab_name)
+                ws.clear()
+                print(f"[CLEAR] '{tab_name}' estaba vacío; se limpiaron filas obsoletas.")
+            except gspread.exceptions.WorksheetNotFound:
+                print(f"[SKIP] '{tab_name}' está vacío, no se subió.")
             continue
         try:
             ws = gss_obj.worksheet(tab_name)
@@ -2160,7 +2204,7 @@ def _parse_cli_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Timestone FTC 2026-2027 — Motor de Scouting y Simulación Monte Carlo"
     )
-    parser.add_argument("--event", default=EVENT, help="Código de evento para pestañas de salida (ej. MXTO).")
+    parser.add_argument("--event", default=EVENT, help="Código de evento para pestañas de salida (ej. MXTLQ).")
     parser.add_argument("--ftcscout-code", default=FTCSCOUT_CODE, help="Código oficial en FTCScout si difiere de --event.")
     parser.add_argument("--season", type=int, default=FTCSCOUT_SEASON, help="Temporada FTCScout (default: 2026).")
     parser.add_argument("--sheet-id", default=SHEET_ID, help="ID del Google Spreadsheet.")

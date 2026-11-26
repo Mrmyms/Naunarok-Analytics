@@ -8,13 +8,13 @@ las reglas físicas de BIOBUZZ y los encabezados exactos del Google Sheet.
 
 Uso:
     # Generar y subir datos realistas a Google Sheets + correr Timestone
-    .venv/bin/python scripts/seed_tournament.py --upload --run-timestone --event MXTO
+    .venv/bin/python scripts/seed_tournament.py --upload --run-timestone --event MXTLQ
 
     # Simulación local sin escribir en Google Sheets
     .venv/bin/python scripts/seed_tournament.py --dry-run
 
     # Limpiar datos de prueba (conserva fila 1 de encabezados) antes del torneo real
-    .venv/bin/python scripts/seed_tournament.py --clear --event MXTO
+    .venv/bin/python scripts/seed_tournament.py --clear --event MXTLQ
 """
 
 from __future__ import annotations
@@ -299,7 +299,7 @@ def _clear_tab_keep_header(spreadsheet: Any, tab_name: str) -> None:
 
 def main(argv: List[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Generador de torneo completo realista BIOBUZZ 2026-2027")
-    parser.add_argument("--event", default="MXTO", help="Código de evento para las pestañas de Timestone.")
+    parser.add_argument("--event", default="MXTLQ", help="Código de evento para las pestañas de Timestone.")
     parser.add_argument("--played", type=int, default=30, help="Matches jugados y escouteados (default: 30 de 36).")
     parser.add_argument("--rounds", type=int, default=6, help="Rondas de calificación (default: 6 -> 36 matches).")
     parser.add_argument("--seed", type=int, default=2026, help="Semilla aleatoria reproducible.")

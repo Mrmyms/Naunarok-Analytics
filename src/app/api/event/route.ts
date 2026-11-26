@@ -9,6 +9,7 @@ const SEARCH_EVENTS_QUERY = `
       name
       regionCode
       start
+      hasMatches
     }
   }
 `;
@@ -21,9 +22,18 @@ const EVENT_BY_CODE_QUERY = `
       season
       regionCode
       start
+      timezone
+      hasMatches
+      teams {
+        teamNumber
+        team {
+          name
+        }
+      }
       matches {
         id
         matchNum
+        series
         tournamentLevel
         hasBeenPlayed
         scheduledStartTime
@@ -33,6 +43,29 @@ const EVENT_BY_CODE_QUERY = `
           teamNumber
           alliance
           station
+          surrogate
+        }
+        scores {
+          ... on MatchScores2026 {
+            red {
+              totalPoints
+              totalPointsNp
+            }
+            blue {
+              totalPoints
+              totalPointsNp
+            }
+          }
+          ... on MatchScores2025 {
+            red {
+              totalPoints
+              totalPointsNp
+            }
+            blue {
+              totalPoints
+              totalPointsNp
+            }
+          }
         }
       }
     }
@@ -82,7 +115,15 @@ export async function GET(request: Request) {
         code: data.eventByCode.code,
         name: data.eventByCode.name,
         season: data.eventByCode.season,
+        timezone: data.eventByCode.timezone || null,
+        hasMatches: Boolean(data.eventByCode.hasMatches),
       },
+      teams: (data.eventByCode.teams || [])
+        .map((t: any) => ({
+          teamNumber: Number(t.teamNumber) || 0,
+          name: String(t.team?.name || `Equipo ${t.teamNumber}`).trim(),
+        }))
+        .filter((t: any) => t.teamNumber > 0),
       matches: data.eventByCode.matches || [],
     });
   } catch (error: any) {

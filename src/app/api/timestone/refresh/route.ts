@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       // Allow empty POST body
     }
 
-    const envEvent = sanitizeEventCode(process.env.TIMESTONE_EVENT, '');
+    const envEvent = sanitizeEventCode(process.env.TIMESTONE_EVENT, 'MXTLQ');
     const eventCode = sanitizeEventCode(body.eventCode, envEvent);
     if (!eventCode) {
       return NextResponse.json(

@@ -4,7 +4,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DuelComparisonBars from '@/components/DuelComparisonBars';
 import RagnarokFieldHeatmap, { type FieldMarker } from '@/components/RagnarokFieldHeatmap';
 import { detectRobotRole } from '@/lib/roles';
-import type { ScheduleMatch, TeamAnalytics, TimestoneMatchSim } from '@/lib/types';
+import type {
+  EventRosterTeam,
+  ScheduleMatch,
+  ScheduleTeam,
+  TeamAnalytics,
+  TimestoneMatchSim,
+  TimestoneTeamMetric,
+} from '@/lib/types';
 
 const MY_TEAM_STORAGE_KEY = 'beyonder_my_team_v1';
 
@@ -16,6 +23,8 @@ interface UnifiedMatch {
   level: string;
   label: string;
   scheduledTime: string | null;
+  redTeams: number[];
+  blueTeams: number[];
   red1: number;
   red2: number;
   blue1: number;
@@ -24,6 +33,7 @@ interface UnifiedMatch {
   redReal: number | null;
   blueReal: number | null;
   isMonteCarlo: boolean;
+  hasProjection: boolean;
   redEst: number;
   blueEst: number;
   redWinPct: number;
@@ -37,17 +47,59 @@ interface UnifiedMatch {
   blueAutoConflict: boolean;
 }
 
+const STATION_ORDER: Record<string, number> = {
+  ONE: 1,
+  TWO: 2,
+  THREE: 3,
+};
+
 function normalizeLevel(raw: string | undefined | null): string {
   const up = String(raw || 'QUALS').trim().toUpperCase();
   if (up === 'QUALIFICATION' || up === 'QUALS' || up === 'QM') return 'QUALS';
   return up || 'QUALS';
 }
 
-function formatMatchTime(iso: string | null | undefined): string | null {
+function getEffectiveMatchCode(level: string, matchNum: number, series?: number): number {
+  if (level !== 'QUALS' && series && series > 0) {
+    return matchNum === 1 ? series : series * 100 + matchNum;
+  }
+  return matchNum;
+}
+
+function extractAllianceTeams(teams: ScheduleTeam[] | undefined, alliance: 'Red' | 'Blue'): number[] {
+  if (!teams?.length) return [];
+  return teams
+    .filter((t) => String(t.alliance || '').toUpperCase() === alliance.toUpperCase() && Number(t.teamNumber) > 0)
+    .sort((a, b) => {
+      const sa = STATION_ORDER[String(a.station || '').toUpperCase()] ?? 9;
+      const sb = STATION_ORDER[String(b.station || '').toUpperCase()] ?? 9;
+      return sa - sb;
+    })
+    .map((t) => Number(t.teamNumber));
+}
+
+function formatMatchTime(
+  iso: string | null | undefined,
+  timeZone?: string | null,
+  includeDate = false
+): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const opts: Intl.DateTimeFormatOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    ...(includeDate ? { day: '2-digit', month: '2-digit' } : {}),
+  };
+  if (timeZone) {
+    try {
+      return d.toLocaleTimeString('es-MX', { ...opts, timeZone });
+    } catch {
+      // Fallback to browser timezone if IANA string is invalid
+    }
+  }
+  return d.toLocaleTimeString('es-MX', opts);
 }
 
 function logisticRedWinPct(redNet: number, blueNet: number): number {
@@ -56,34 +108,75 @@ function logisticRedWinPct(redNet: number, blueNet: number): number {
   return Math.round(Math.max(3, Math.min(97, raw)) * 10) / 10;
 }
 
-function summarizeAlliance(ids: number[], teamMap: Map<number, TeamAnalytics>) {
-  const members = ids
-    .filter((id) => id > 0)
+function summarizeAlliance(
+  ids: number[],
+  teamMap: Map<number, TeamAnalytics>,
+  tsTeamMap: Map<number, TimestoneTeamMetric>
+) {
+  const cleanIds = ids.filter((id) => id > 0);
+  const members = cleanIds
     .map((id) => teamMap.get(id))
     .filter((t): t is TeamAnalytics => !!t);
 
-  const sum = (fn: (t: TeamAnalytics) => number) =>
-    Math.round(members.reduce((acc, t) => acc + fn(t), 0) * 10) / 10;
+  let auto = 0;
+  let tele = 0;
+  let fouls = 0;
+  let net = 0;
+  let balancin = 0;
+  let flor = 0;
+  let garden = 0;
+  let swarmPts = 0;
+  let oprSum = 0;
+  let oprCount = 0;
+  const zones: string[] = [];
 
-  const zones = members.map((m) => m.topStartPos).filter((z) => z && z !== '—');
+  for (const id of cleanIds) {
+    const scout = teamMap.get(id);
+    const ts = scout?.timestone ?? tsTeamMap.get(id);
+
+    if (scout) {
+      auto += scout.autoAvg;
+      tele += scout.teleAvg;
+      fouls += scout.foulsAvg;
+      net += scout.autoAvg + scout.teleAvg - scout.foulsAvg;
+      balancin += scout.balancinAutoAvg + scout.balancinTeleAvg;
+      flor += scout.florAvg;
+      garden += scout.gardenAvg;
+      swarmPts += scout.swarmPtsAvg;
+      if (scout.topStartPos && scout.topStartPos !== '—') {
+        zones.push(scout.topStartPos);
+      }
+    } else if (ts) {
+      auto += ts.autoEst;
+      tele += ts.teleEst + ts.endEst;
+      fouls += ts.foulsEst;
+      net += ts.epa;
+      flor += ts.piezasFlor;
+      if (ts.posEstimada && ts.posEstimada !== 'NONE') {
+        zones.push(ts.posEstimada);
+      }
+    }
+
+    if (ts?.opr != null) {
+      oprSum += ts.opr;
+      oprCount += 1;
+    }
+  }
+
+  const r1 = (n: number) => Math.round(n * 10) / 10;
   const hasCollision = zones.length >= 2 && new Set(zones).size < zones.length;
-  const oprMembers = members.filter((m) => m.timestone?.opr != null);
-  const combinedOpr =
-    oprMembers.length > 0
-      ? Math.round(oprMembers.reduce((s, m) => s + (m.timestone?.opr ?? 0), 0) * 10) / 10
-      : null;
 
   return {
     members,
-    auto: sum((t) => t.autoAvg),
-    tele: sum((t) => t.teleAvg),
-    fouls: sum((t) => t.foulsAvg),
-    net: Math.round((sum((t) => t.autoAvg) + sum((t) => t.teleAvg) - sum((t) => t.foulsAvg)) * 10) / 10,
-    balancin: sum((t) => t.balancinAutoAvg + t.balancinTeleAvg),
-    flor: sum((t) => t.florAvg),
-    garden: sum((t) => t.gardenAvg),
-    swarmPts: sum((t) => t.swarmPtsAvg),
-    combinedOpr,
+    auto: r1(auto),
+    tele: r1(tele),
+    fouls: r1(fouls),
+    net: r1(net),
+    balancin: r1(balancin),
+    flor: r1(flor),
+    garden: r1(garden),
+    swarmPts: r1(swarmPts),
+    combinedOpr: oprCount > 0 ? r1(oprSum) : null,
     hasCollision,
     zones,
   };
@@ -92,48 +185,135 @@ function summarizeAlliance(ids: number[], teamMap: Map<number, TeamAnalytics>) {
 function AllianceRobotDetailedCards({
   ids,
   teamMap,
+  tsTeamMap,
+  eventTeamNameMap,
   accent,
   myTeam,
   onSelect,
 }: {
   ids: number[];
   teamMap: Map<number, TeamAnalytics>;
+  tsTeamMap: Map<number, TimestoneTeamMetric>;
+  eventTeamNameMap: Map<number, string>;
   accent: string;
   myTeam: number;
   onSelect: (teamNum: number) => void;
 }) {
+  const cleanIds = ids.filter((id) => id > 0);
+  if (cleanIds.length === 0) {
+    return (
+      <div
+        style={{
+          background: 'var(--bg-carbon)',
+          border: '1px solid var(--border-steel)',
+          borderLeft: `3px solid ${accent}`,
+          borderRadius: '4px',
+          padding: '10px 12px',
+          fontSize: '12px',
+          color: 'var(--text-muted)',
+        }}
+      >
+        Sin equipos asignados en esta alianza.
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {ids.map((id, idx) => {
+      {cleanIds.map((id, idx) => {
         const m = teamMap.get(id);
-        if (!m) {
+        const ts = m?.timestone ?? tsTeamMap.get(id);
+        const officialName = eventTeamNameMap.get(id) || ts?.name;
+        const isMine = id === myTeam;
+
+        if (!m && !ts) {
           return (
             <div
               key={`${id}-${idx}`}
+              className="tabular"
               style={{
                 background: 'var(--bg-carbon)',
-                border: '1px solid var(--border-steel)',
-                borderLeft: `3px solid ${accent}`,
+                border: isMine ? '1px solid rgba(255, 209, 102, 0.55)' : '1px solid var(--border-steel)',
+                borderLeft: `3px solid ${isMine ? 'var(--accent-amber)' : accent}`,
                 borderRadius: '4px',
                 padding: '10px 12px',
                 fontSize: '12px',
                 color: 'var(--text-muted)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
               }}
             >
-              #{id || '?'} • Sin datos en Scouting todavía
+              <span style={{ fontWeight: 800, color: isMine ? 'var(--accent-amber)' : 'var(--text-silver)' }}>
+                {isMine ? '★ ' : ''}#{id}
+                {officialName ? ` • ${officialName}` : ''}
+              </span>
+              <span style={{ fontSize: '11px' }}>Sin scouting local todavía</span>
             </div>
           );
         }
 
-        const roleMeta = detectRobotRole(m);
-        const thumb = m.pit?.photos?.[0];
-        const isMine = id === myTeam;
-        const name = m.pit?.teamName || m.timestone?.name;
+        if (!m && ts) {
+          return (
+            <div
+              key={`${id}-${idx}`}
+              className="tabular"
+              style={{
+                background: 'var(--bg-carbon)',
+                border: isMine ? '1px solid rgba(255, 209, 102, 0.55)' : '1px solid var(--border-steel)',
+                borderLeft: `3px solid ${isMine ? 'var(--accent-amber)' : accent}`,
+                borderRadius: '4px',
+                padding: '10px 12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px',
+                fontSize: '12px',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 900, fontSize: '14px', color: isMine ? 'var(--accent-amber)' : '#FFFFFF' }}>
+                    {isMine ? '★ ' : ''}#{ts.team}
+                  </span>
+                  {officialName && (
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>{officialName}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  EPA <strong style={{ color: 'var(--bey-purple)' }}>{ts.epa.toFixed(1)}</strong>
+                  {ts.opr != null && (
+                    <>
+                      {' '}• OPR <strong style={{ color: 'var(--bey-cyan)' }}>{ts.opr.toFixed(1)}</strong> / DPR{' '}
+                      <strong style={{ color: 'var(--accent-emerald)' }}>{ts.dpr?.toFixed(1) ?? '—'}</strong>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', fontWeight: 700, flexWrap: 'wrap', alignItems: 'center', fontSize: '11.5px' }}>
+                <span style={{ color: '#E2E8F0' }}>A {ts.autoEst.toFixed(1)}</span>
+                <span style={{ color: '#E2E8F0' }}>T {(ts.teleEst + ts.endEst).toFixed(1)}</span>
+                <span style={{ color: '#FB7185' }}>Flor {ts.piezasFlor.toFixed(1)}</span>
+                <span style={{ color: ts.reliabilityPct >= 90 ? '#34D399' : '#FFD166' }}>
+                  {ts.reliabilityPct.toFixed(0)}% Op
+                </span>
+              </div>
+            </div>
+          );
+        }
+
+        const robot = m!;
+        const roleMeta = detectRobotRole(robot);
+        const thumb = robot.pit?.photos?.[0];
+        const name = robot.pit?.teamName || officialName;
 
         return (
           <div
-            key={m.team}
-            onClick={() => onSelect(m.team)}
+            key={robot.team}
+            onClick={() => onSelect(robot.team)}
             className="tabular"
             style={{
               background: 'var(--bg-carbon)',
@@ -154,7 +334,7 @@ function AllianceRobotDetailedCards({
               {thumb && (
                 <img
                   src={`/api/pit/photo?id=${encodeURIComponent(thumb.photoId)}`}
-                  alt={`#${m.team}`}
+                  alt={`#${robot.team}`}
                   loading="lazy"
                   style={{
                     width: '34px',
@@ -168,7 +348,7 @@ function AllianceRobotDetailedCards({
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 900, fontSize: '14px', color: isMine ? 'var(--accent-amber)' : '#FFFFFF' }}>
-                    {isMine ? '★ ' : ''}#{m.team}
+                    {isMine ? '★ ' : ''}#{robot.team}
                   </span>
                   {name && (
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>{name}</span>
@@ -188,12 +368,12 @@ function AllianceRobotDetailedCards({
                   </span>
                 </div>
                 <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Auto Zona <strong style={{ color: 'var(--text-silver)' }}>{m.topStartPos}</strong> • EPA{' '}
-                  <strong style={{ color: 'var(--bey-purple)' }}>{m.epaNetAvg.toFixed(1)}</strong>
-                  {m.timestone?.opr != null && (
+                  Auto Zona <strong style={{ color: 'var(--text-silver)' }}>{robot.topStartPos}</strong> • EPA{' '}
+                  <strong style={{ color: 'var(--bey-purple)' }}>{robot.epaNetAvg.toFixed(1)}</strong>
+                  {ts?.opr != null && (
                     <>
-                      {' '}• OPR <strong style={{ color: 'var(--bey-cyan)' }}>{m.timestone.opr.toFixed(1)}</strong> / DPR{' '}
-                      <strong style={{ color: 'var(--accent-emerald)' }}>{m.timestone.dpr?.toFixed(1) ?? '—'}</strong>
+                      {' '}• OPR <strong style={{ color: 'var(--bey-cyan)' }}>{ts.opr.toFixed(1)}</strong> / DPR{' '}
+                      <strong style={{ color: 'var(--accent-emerald)' }}>{ts.dpr?.toFixed(1) ?? '—'}</strong>
                     </>
                   )}
                 </div>
@@ -201,13 +381,13 @@ function AllianceRobotDetailedCards({
             </div>
 
             <div style={{ display: 'flex', gap: '10px', fontWeight: 700, flexWrap: 'wrap', alignItems: 'center', fontSize: '11.5px' }}>
-              <span style={{ color: '#E2E8F0' }}>A {m.autoAvg.toFixed(1)}</span>
-              <span style={{ color: '#E2E8F0' }}>T {m.teleAvg.toFixed(1)}</span>
-              <span style={{ color: '#60A5FA' }}>Bal {(m.balancinAutoAvg + m.balancinTeleAvg).toFixed(1)}</span>
-              <span style={{ color: '#FB7185' }}>Flor {m.florAvg.toFixed(1)}</span>
-              <span style={{ color: '#34D399' }}>Gar {m.gardenAvg.toFixed(1)}</span>
-              <span style={{ color: m.reliabilityPct >= 90 ? '#34D399' : m.reliabilityPct < 70 ? '#FCA5A5' : '#FFD166' }}>
-                {m.reliabilityPct.toFixed(0)}% Op
+              <span style={{ color: '#E2E8F0' }}>A {robot.autoAvg.toFixed(1)}</span>
+              <span style={{ color: '#E2E8F0' }}>T {robot.teleAvg.toFixed(1)}</span>
+              <span style={{ color: '#60A5FA' }}>Bal {(robot.balancinAutoAvg + robot.balancinTeleAvg).toFixed(1)}</span>
+              <span style={{ color: '#FB7185' }}>Flor {robot.florAvg.toFixed(1)}</span>
+              <span style={{ color: '#34D399' }}>Gar {robot.gardenAvg.toFixed(1)}</span>
+              <span style={{ color: robot.reliabilityPct >= 90 ? '#34D399' : robot.reliabilityPct < 70 ? '#FCA5A5' : '#FFD166' }}>
+                {robot.reliabilityPct.toFixed(0)}% Op
               </span>
             </div>
           </div>
@@ -221,7 +401,9 @@ export default function MatchScheduleView({
   teams,
   teamMap,
   timestoneMatches,
+  timestoneTeams,
   scheduleMatches,
+  eventTeams,
   activeEventCode,
   loadedEvent,
   eventSeason,
@@ -237,9 +419,17 @@ export default function MatchScheduleView({
   teams: TeamAnalytics[];
   teamMap: Map<number, TeamAnalytics>;
   timestoneMatches: TimestoneMatchSim[];
+  timestoneTeams: TimestoneTeamMetric[];
   scheduleMatches: ScheduleMatch[];
+  eventTeams: EventRosterTeam[];
   activeEventCode: string;
-  loadedEvent: { code: string; name: string; season: number } | null;
+  loadedEvent: {
+    code: string;
+    name: string;
+    season: number;
+    timezone?: string | null;
+    hasMatches?: boolean;
+  } | null;
   eventSeason: number;
   eventCodeInput: string;
   loadingEvent: boolean;
@@ -290,10 +480,64 @@ export default function MatchScheduleView({
     }
   };
 
-  // Unify Timestone simulations + FTCScout schedule (with timestamps)
-  const unifiedMatches = useMemo<UnifiedMatch[]>(() => {
-    const tsByKey = new Map<string, TimestoneMatchSim>();
+  const eventTeamNameMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const et of eventTeams) {
+      if (et.teamNumber > 0) map.set(et.teamNumber, et.name);
+    }
+    return map;
+  }, [eventTeams]);
+
+  const tsTeamMap = useMemo(() => {
+    const map = new Map<number, TimestoneTeamMetric>();
+    for (const tt of timestoneTeams) {
+      if (tt.team > 0) map.set(tt.team, tt);
+    }
+    return map;
+  }, [timestoneTeams]);
+
+  // Guard against stale/generic demo matches cached in Timestone Sheets when FTCScout confirms 0 matches & zero roster overlap
+  const timestoneRosterMismatch = useMemo(() => {
+    if (
+      !loadedEvent ||
+      loadedEvent.code !== activeEventCode ||
+      scheduleMatches.length > 0 ||
+      eventTeamNameMap.size === 0 ||
+      timestoneMatches.length === 0
+    ) {
+      return false;
+    }
     for (const tm of timestoneMatches) {
+      for (const tid of [tm.red1, tm.red2, tm.blue1, tm.blue2]) {
+        if (tid > 0 && eventTeamNameMap.has(tid)) return false;
+      }
+    }
+    return true;
+  }, [loadedEvent, activeEventCode, scheduleMatches.length, eventTeamNameMap, timestoneMatches]);
+
+  const includeDateInTime = useMemo(() => {
+    const tz = loadedEvent?.timezone || undefined;
+    const days = new Set<string>();
+    for (const sm of scheduleMatches) {
+      const iso = sm.scheduledStartTime || sm.actualStartTime;
+      if (!iso) continue;
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) continue;
+      try {
+        days.add(d.toLocaleDateString('en-CA', tz ? { timeZone: tz } : undefined));
+      } catch {
+        days.add(d.toLocaleDateString('en-CA'));
+      }
+    }
+    return days.size > 1;
+  }, [scheduleMatches, loadedEvent?.timezone]);
+
+  // Unify Timestone simulations + FTCScout schedule (with timestamps, series keys & real scores)
+  const unifiedMatches = useMemo<UnifiedMatch[]>(() => {
+    const effectiveTsMatches = timestoneRosterMismatch ? [] : timestoneMatches;
+
+    const tsByKey = new Map<string, TimestoneMatchSim>();
+    for (const tm of effectiveTsMatches) {
       const lvl = normalizeLevel(tm.nivel);
       tsByKey.set(`${lvl}#${tm.match}`, tm);
     }
@@ -301,7 +545,8 @@ export default function MatchScheduleView({
     const schedByKey = new Map<string, ScheduleMatch>();
     for (const sm of scheduleMatches) {
       const lvl = normalizeLevel(sm.tournamentLevel);
-      schedByKey.set(`${lvl}#${sm.matchNum}`, sm);
+      const effCode = getEffectiveMatchCode(lvl, sm.matchNum, sm.series);
+      schedByKey.set(`${lvl}#${effCode}`, sm);
     }
 
     const allKeys = Array.from(new Set([...tsByKey.keys(), ...schedByKey.keys()]));
@@ -311,71 +556,115 @@ export default function MatchScheduleView({
       const tm = tsByKey.get(key);
       const sm = schedByKey.get(key);
 
-      const level = tm ? normalizeLevel(tm.nivel) : normalizeLevel(sm?.tournamentLevel);
-      const matchNum = tm ? tm.match : sm?.matchNum || 0;
+      const level = sm ? normalizeLevel(sm.tournamentLevel) : normalizeLevel(tm?.nivel);
+      const matchNum = sm
+        ? getEffectiveMatchCode(level, sm.matchNum, sm.series)
+        : tm?.match || 0;
       if (!matchNum) continue;
 
-      const smRed1 = sm?.teams.find((t) => t.alliance === 'Red' && t.station === 'One')?.teamNumber || 0;
-      const smRed2 = sm?.teams.find((t) => t.alliance === 'Red' && t.station === 'Two')?.teamNumber || 0;
-      const smBlue1 = sm?.teams.find((t) => t.alliance === 'Blue' && t.station === 'One')?.teamNumber || 0;
-      const smBlue2 = sm?.teams.find((t) => t.alliance === 'Blue' && t.station === 'Two')?.teamNumber || 0;
+      const smRed = extractAllianceTeams(sm?.teams, 'Red');
+      const smBlue = extractAllianceTeams(sm?.teams, 'Blue');
+      const tmRed = [tm?.red1 || 0, tm?.red2 || 0].filter((n) => n > 0);
+      const tmBlue = [tm?.blue1 || 0, tm?.blue2 || 0].filter((n) => n > 0);
 
-      const red1 = tm?.red1 || smRed1;
-      const red2 = tm?.red2 || smRed2;
-      const blue1 = tm?.blue1 || smBlue1;
-      const blue2 = tm?.blue2 || smBlue2;
+      const redTeams = smRed.length > 0 ? smRed : tmRed;
+      const blueTeams = smBlue.length > 0 ? smBlue : tmBlue;
 
-      const redSummary = summarizeAlliance([red1, red2], teamMap);
-      const blueSummary = summarizeAlliance([blue1, blue2], teamMap);
+      const red1 = redTeams[0] || 0;
+      const red2 = redTeams[1] || 0;
+      const blue1 = blueTeams[0] || 0;
+      const blue2 = blueTeams[1] || 0;
 
-      const fallbackRedPct = logisticRedWinPct(redSummary.net, blueSummary.net);
-      const scheduledTime = formatMatchTime(sm?.scheduledStartTime || sm?.actualStartTime);
+      const redSummary = summarizeAlliance(redTeams, teamMap, tsTeamMap);
+      const blueSummary = summarizeAlliance(blueTeams, teamMap, tsTeamMap);
+
+      const fallbackRedPct =
+        redSummary.net > 0 || blueSummary.net > 0
+          ? logisticRedWinPct(redSummary.net, blueSummary.net)
+          : 50;
+
+      const scheduledTime = formatMatchTime(
+        sm?.scheduledStartTime || sm?.actualStartTime,
+        loadedEvent?.timezone,
+        includeDateInTime
+      );
       const labelPrefix = level === 'QUALS' ? 'Q' : level.slice(0, 1);
+      const label = (sm?.description || '').trim() || `${labelPrefix}${matchNum}`;
 
       const played = Boolean(tm?.jugado || sm?.hasBeenPlayed);
+      const redReal = tm?.redReal ?? sm?.scores?.red?.totalPoints ?? null;
+      const blueReal = tm?.blueReal ?? sm?.scores?.blue?.totalPoints ?? null;
+
+      // Handle Timestone rows for completely unscouted events (0 est / 0% win / 100% tie)
+      const tmHasZeroEstimates = Boolean(
+        tm && tm.redEst === 0 && tm.blueEst === 0 && tm.redWinPct === 0 && tm.blueWinPct === 0
+      );
+      const isMonteCarlo = Boolean(tm && !tmHasZeroEstimates);
+      const hasProjection =
+        isMonteCarlo || redSummary.net > 0 || blueSummary.net > 0;
 
       list.push({
         key,
         matchNum,
         level,
-        label: `${labelPrefix}${matchNum}`,
+        label,
         scheduledTime,
+        redTeams,
+        blueTeams,
         red1,
         red2,
         blue1,
         blue2,
         played,
-        redReal: tm?.redReal ?? null,
-        blueReal: tm?.blueReal ?? null,
-        isMonteCarlo: Boolean(tm),
-        redEst: tm ? tm.redEst : redSummary.net,
-        blueEst: tm ? tm.blueEst : blueSummary.net,
-        redWinPct: tm ? tm.redWinPct : fallbackRedPct,
-        blueWinPct: tm ? tm.blueWinPct : Math.round((100 - fallbackRedPct) * 10) / 10,
-        tiePct: tm ? tm.tiePct : 0,
-        redRpsEst: tm ? tm.redRpsEst : 0,
-        blueRpsEst: tm ? tm.blueRpsEst : 0,
-        redFloresTap: tm ? tm.redFloresTap : 0,
-        blueFloresTap: tm ? tm.blueFloresTap : 0,
-        redAutoConflict: tm ? tm.redAutoConflict : redSummary.hasCollision,
-        blueAutoConflict: tm ? tm.blueAutoConflict : blueSummary.hasCollision,
+        redReal,
+        blueReal,
+        isMonteCarlo,
+        hasProjection,
+        redEst: isMonteCarlo && tm ? tm.redEst : redSummary.net,
+        blueEst: isMonteCarlo && tm ? tm.blueEst : blueSummary.net,
+        redWinPct: isMonteCarlo && tm ? tm.redWinPct : fallbackRedPct,
+        blueWinPct: isMonteCarlo && tm ? tm.blueWinPct : Math.round((100 - fallbackRedPct) * 10) / 10,
+        tiePct: isMonteCarlo && tm ? tm.tiePct : 0,
+        redRpsEst: isMonteCarlo && tm ? tm.redRpsEst : 0,
+        blueRpsEst: isMonteCarlo && tm ? tm.blueRpsEst : 0,
+        redFloresTap: isMonteCarlo && tm ? tm.redFloresTap : 0,
+        blueFloresTap: isMonteCarlo && tm ? tm.blueFloresTap : 0,
+        redAutoConflict: isMonteCarlo && tm ? tm.redAutoConflict : redSummary.hasCollision,
+        blueAutoConflict: isMonteCarlo && tm ? tm.blueAutoConflict : blueSummary.hasCollision,
       });
     }
 
+    const levelRank = (lvl: string) => {
+      if (lvl === 'QUALS') return 0;
+      if (lvl === 'SEMIS') return 1;
+      if (lvl === 'DOUBLEELIM') return 2;
+      if (lvl === 'FINALS') return 3;
+      return 4;
+    };
+
     list.sort((a, b) => {
-      if (a.level === 'QUALS' && b.level !== 'QUALS') return -1;
-      if (a.level !== 'QUALS' && b.level === 'QUALS') return 1;
+      const la = levelRank(a.level);
+      const lb = levelRank(b.level);
+      if (la !== lb) return la - lb;
       if (a.level !== b.level) return a.level.localeCompare(b.level);
       return a.matchNum - b.matchNum;
     });
 
     return list;
-  }, [timestoneMatches, scheduleMatches, teamMap]);
+  }, [
+    timestoneMatches,
+    timestoneRosterMismatch,
+    scheduleMatches,
+    teamMap,
+    tsTeamMap,
+    loadedEvent?.timezone,
+    includeDateInTime,
+  ]);
 
   const myMatches = useMemo(() => {
     if (!myTeam) return [];
     return unifiedMatches.filter(
-      (m) => m.red1 === myTeam || m.red2 === myTeam || m.blue1 === myTeam || m.blue2 === myTeam
+      (m) => m.redTeams.includes(myTeam) || m.blueTeams.includes(myTeam)
     );
   }, [unifiedMatches, myTeam]);
 
@@ -396,11 +685,11 @@ export default function MatchScheduleView({
     let projWins = 0;
     let projLosses = 0;
     for (const m of myMatches) {
-      const inRed = m.red1 === myTeam || m.red2 === myTeam;
+      const inRed = m.redTeams.includes(myTeam);
       if (m.played && m.redReal !== null && m.blueReal !== null) {
         if ((inRed && m.redReal > m.blueReal) || (!inRed && m.blueReal > m.redReal)) projWins += 1;
         else if (m.redReal !== m.blueReal) projLosses += 1;
-      } else {
+      } else if (m.hasProjection) {
         const myWinPct = inRed ? m.redWinPct : m.blueWinPct;
         if (myWinPct >= 50) projWins += 1;
         else projLosses += 1;
@@ -414,17 +703,11 @@ export default function MatchScheduleView({
     return unifiedMatches.filter((m) => {
       if (filter === 'pending' && m.played) return false;
       if (filter === 'played' && !m.played) return false;
-      if (
-        filter === 'mine' &&
-        m.red1 !== myTeam &&
-        m.red2 !== myTeam &&
-        m.blue1 !== myTeam &&
-        m.blue2 !== myTeam
-      ) {
+      if (filter === 'mine' && !m.redTeams.includes(myTeam) && !m.blueTeams.includes(myTeam)) {
         return false;
       }
       if (q) {
-        const haystack = `${m.label} ${m.matchNum} ${m.red1} ${m.red2} ${m.blue1} ${m.blue2}`.toUpperCase();
+        const haystack = `${m.label} ${m.matchNum} ${m.redTeams.join(' ')} ${m.blueTeams.join(' ')}`.toUpperCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -456,8 +739,8 @@ export default function MatchScheduleView({
   const mcCount = unifiedMatches.filter((m) => m.isMonteCarlo).length;
 
   // Manual 2v2 Sandbox projections
-  const manualRedProj = summarizeAlliance([manualRed1, manualRed2], teamMap);
-  const manualBlueProj = summarizeAlliance([manualBlue1, manualBlue2], teamMap);
+  const manualRedProj = summarizeAlliance([manualRed1, manualRed2], teamMap, tsTeamMap);
+  const manualBlueProj = summarizeAlliance([manualBlue1, manualBlue2], teamMap, tsTeamMap);
   const manualRedPct = logisticRedWinPct(manualRedProj.net, manualBlueProj.net);
   const manualMarkers: FieldMarker[] = [
     ...manualRedProj.members.map((m, idx) => ({
@@ -476,7 +759,7 @@ export default function MatchScheduleView({
 
   const getMyWinBadge = (m: UnifiedMatch | null) => {
     if (!m) return null;
-    const inRed = m.red1 === myTeam || m.red2 === myTeam;
+    const inRed = m.redTeams.includes(myTeam);
     const pct = inRed ? m.redWinPct : m.blueWinPct;
     return { inRed, pct };
   };
@@ -490,7 +773,11 @@ export default function MatchScheduleView({
           <span className="kpi-label">Matches en Horario</span>
           <span className="kpi-value tabular">{unifiedMatches.length}</span>
           <span className="kpi-sub tabular">
-            {playedCount} jugados • {pendingCount} pendientes
+            {unifiedMatches.length > 0
+              ? `${playedCount} jugados • ${pendingCount} pendientes`
+              : eventTeams.length > 0
+                ? `${eventTeams.length} equipos registrados`
+                : 'Sin matches publicados'}
           </span>
         </div>
 
@@ -501,7 +788,7 @@ export default function MatchScheduleView({
           </span>
           <span className="kpi-sub tabular">
             {nextMyMatch && nextBadge
-              ? `${nextMyMatch.scheduledTime ? `${nextMyMatch.scheduledTime} • ` : ''}${nextBadge.inRed ? 'Roja' : 'Azul'} (${nextBadge.pct.toFixed(0)}% Win)`
+              ? `${nextMyMatch.scheduledTime ? `${nextMyMatch.scheduledTime} • ` : ''}${nextBadge.inRed ? 'Roja' : 'Azul'}${nextMyMatch.hasProjection ? ` (${nextBadge.pct.toFixed(0)}% Win)` : ''}`
               : 'Sin partido próximo'}
           </span>
         </div>
@@ -587,11 +874,14 @@ export default function MatchScheduleView({
           </select>
           <input
             type="text"
-            placeholder="Código FTCScout (ej. MXTO)"
+            placeholder="Código FTCScout (ej. MXTLQ)"
             value={eventCodeInput}
             onChange={(e) => onChangeEventCodeInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onLoadEvent();
+            }}
             className="input-rag"
-            style={{ width: '155px', padding: '6px 10px', fontSize: '11.5px' }}
+            style={{ width: '165px', padding: '6px 10px', fontSize: '11.5px' }}
           />
           <button
             type="button"
@@ -682,28 +972,58 @@ export default function MatchScheduleView({
 
       {/* ================= LISTA EXPANDIBLE DE HORARIO ================= */}
       {filteredMatches.length === 0 ? (
-        <div className="panel" style={{ padding: '32px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center' }}>
+        <div className="panel" style={{ padding: '28px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
           <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-silver)' }}>
-            {unifiedMatches.length === 0
-              ? 'No hay horario de matches cargado todavía.'
-              : 'Ningún match coincide con el filtro actual.'}
+            {loadedEvent && eventTeams.length > 0 && scheduleMatches.length === 0
+              ? `${loadedEvent.code} (${loadedEvent.name}) no tiene matches publicados en FTCScout ${loadedEvent.season}.`
+              : unifiedMatches.length === 0
+                ? 'No hay horario de matches cargado todavía.'
+                : 'Ningún match coincide con el filtro actual.'}
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '520px' }}>
-            {unifiedMatches.length === 0
-              ? 'Selecciona un evento con simulación Timestone o ingresa el código de evento arriba y pulsa "Cargar Horario" para traer los horarios oficiales desde FTCScout.'
-              : 'Prueba cambiar a "Todos" o limpiar la búsqueda.'}
-          </div>
+
+          {timestoneRosterMismatch && (
+            <div style={{ fontSize: '12px', color: 'var(--accent-amber)', maxWidth: '580px' }}>
+              Se ocultaron {timestoneMatches.length} filas de Sheets porque no coinciden con los {eventTeams.length} equipos oficiales de {loadedEvent?.code}. Pulsa Timestone para limpiar esas pestañas.
+            </div>
+          )}
+
+          {loadedEvent && eventTeams.length > 0 && scheduleMatches.length === 0 && (
+            <div style={{ width: '100%', maxWidth: '780px', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--bey-cyan)', textTransform: 'uppercase' }}>
+                Roster oficial FTCScout ({eventTeams.length} equipos)
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center' }}>
+                {eventTeams.map((et) => (
+                  <span
+                    key={et.teamNumber}
+                    className="tabular"
+                    style={{
+                      background: 'var(--bg-carbon)',
+                      border: '1px solid var(--border-steel)',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      color: 'var(--text-silver)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <strong style={{ color: '#FFFFFF' }}>#{et.teamNumber}</strong> · {et.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="schedule-list">
           {filteredMatches.map((m) => {
             const isExpanded = expandedKeys.has(m.key);
             const hasMyTeam =
-              myTeam > 0 && (m.red1 === myTeam || m.red2 === myTeam || m.blue1 === myTeam || m.blue2 === myTeam);
+              myTeam > 0 && (m.redTeams.includes(myTeam) || m.blueTeams.includes(myTeam));
             const isNextMine = nextMyMatch?.key === m.key;
 
-            const redSummary = isExpanded ? summarizeAlliance([m.red1, m.red2], teamMap) : null;
-            const blueSummary = isExpanded ? summarizeAlliance([m.blue1, m.blue2], teamMap) : null;
+            const redSummary = isExpanded ? summarizeAlliance(m.redTeams, teamMap, tsTeamMap) : null;
+            const blueSummary = isExpanded ? summarizeAlliance(m.blueTeams, teamMap, tsTeamMap) : null;
 
             const expandedMarkers: FieldMarker[] =
               isExpanded && redSummary && blueSummary
@@ -770,32 +1090,44 @@ export default function MatchScheduleView({
 
                   {/* Col 2: Alianza Roja */}
                   <div className="tabular" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                    {[m.red1, m.red2].map((tNum, idx) => {
-                      const isMine = tNum > 0 && tNum === myTeam;
-                      return (
-                        <span
-                          key={`${tNum}-${idx}`}
-                          style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '12px',
-                            fontWeight: 900,
-                            background: isMine ? 'rgba(255, 209, 102, 0.18)' : 'rgba(225, 29, 72, 0.14)',
-                            border: `1px solid ${isMine ? 'var(--accent-amber)' : 'rgba(225, 29, 72, 0.45)'}`,
-                            color: isMine ? 'var(--accent-amber)' : '#FDA4AF',
-                          }}
-                        >
-                          {isMine ? '★ ' : ''}#{tNum || '?'}
-                        </span>
-                      );
-                    })}
+                    {m.redTeams.length === 0 ? (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>TBD</span>
+                    ) : (
+                      m.redTeams.map((tNum, idx) => {
+                        const isMine = tNum > 0 && tNum === myTeam;
+                        const tName = eventTeamNameMap.get(tNum) || teamMap.get(tNum)?.pit?.teamName || tsTeamMap.get(tNum)?.name;
+                        return (
+                          <span
+                            key={`${tNum}-${idx}`}
+                            title={tName ? `#${tNum} • ${tName}` : `#${tNum}`}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 900,
+                              background: isMine ? 'rgba(255, 209, 102, 0.18)' : 'rgba(225, 29, 72, 0.14)',
+                              border: `1px solid ${isMine ? 'var(--accent-amber)' : 'rgba(225, 29, 72, 0.45)'}`,
+                              color: isMine ? 'var(--accent-amber)' : '#FDA4AF',
+                            }}
+                          >
+                            {isMine ? '★ ' : ''}#{tNum}
+                          </span>
+                        );
+                      })
+                    )}
                   </div>
 
                   {/* Col 3: Probabilidad de Ganar + Barra Dual */}
                   <div className="tabular" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', fontWeight: 900, gap: '6px' }}>
                       <span style={{ color: 'var(--rag-coral)' }}>
-                        {m.redWinPct.toFixed(0)}% <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>({m.redEst.toFixed(0)})</span>
+                        {m.hasProjection ? (
+                          <>
+                            {m.redWinPct.toFixed(0)}% <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>({m.redEst.toFixed(0)})</span>
+                          </>
+                        ) : (
+                          '—'
+                        )}
                       </span>
 
                       <span
@@ -812,17 +1144,39 @@ export default function MatchScheduleView({
                           ? `REAL ${m.redReal}-${m.blueReal}`
                           : m.isMonteCarlo
                             ? 'MC'
-                            : 'EPA'}
+                            : m.hasProjection
+                              ? 'EPA'
+                              : 'SIN SCOUT'}
                       </span>
 
                       <span style={{ color: 'var(--accent-cyan)' }}>
-                        <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>({m.blueEst.toFixed(0)})</span> {m.blueWinPct.toFixed(0)}%
+                        {m.hasProjection ? (
+                          <>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>({m.blueEst.toFixed(0)})</span> {m.blueWinPct.toFixed(0)}%
+                          </>
+                        ) : (
+                          '—'
+                        )}
                       </span>
                     </div>
 
-                    <div style={{ height: '7px', width: '100%', background: 'var(--accent-cyan)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                      <div style={{ width: `${m.redWinPct}%`, background: 'var(--rag-crimson)' }} />
-                      {m.tiePct > 0 && <div style={{ width: `${m.tiePct}%`, background: 'var(--accent-amber)' }} />}
+                    <div style={{ height: '7px', width: '100%', background: m.hasProjection ? 'var(--accent-cyan)' : 'var(--border-steel)', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+                      {m.hasProjection ? (
+                        <>
+                          <div style={{ width: `${m.redWinPct}%`, background: 'var(--rag-crimson)' }} />
+                          {m.tiePct > 0 && <div style={{ width: `${m.tiePct}%`, background: 'var(--accent-amber)' }} />}
+                        </>
+                      ) : m.played && m.redReal !== null && m.blueReal !== null && m.redReal + m.blueReal > 0 ? (
+                        <>
+                          <div
+                            style={{
+                              width: `${(m.redReal / (m.redReal + m.blueReal)) * 100}%`,
+                              background: 'var(--rag-crimson)',
+                            }}
+                          />
+                          <div style={{ flex: 1, background: 'var(--accent-cyan)' }} />
+                        </>
+                      ) : null}
                     </div>
 
                     {(m.isMonteCarlo || m.redAutoConflict || m.blueAutoConflict) && (
@@ -838,25 +1192,31 @@ export default function MatchScheduleView({
 
                   {/* Col 4: Alianza Azul */}
                   <div className="tabular" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
-                    {[m.blue1, m.blue2].map((tNum, idx) => {
-                      const isMine = tNum > 0 && tNum === myTeam;
-                      return (
-                        <span
-                          key={`${tNum}-${idx}`}
-                          style={{
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '12px',
-                            fontWeight: 900,
-                            background: isMine ? 'rgba(255, 209, 102, 0.18)' : 'rgba(56, 189, 248, 0.14)',
-                            border: `1px solid ${isMine ? 'var(--accent-amber)' : 'rgba(56, 189, 248, 0.45)'}`,
-                            color: isMine ? 'var(--accent-amber)' : '#7DD3FC',
-                          }}
-                        >
-                          {isMine ? '★ ' : ''}#{tNum || '?'}
-                        </span>
-                      );
-                    })}
+                    {m.blueTeams.length === 0 ? (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>TBD</span>
+                    ) : (
+                      m.blueTeams.map((tNum, idx) => {
+                        const isMine = tNum > 0 && tNum === myTeam;
+                        const tName = eventTeamNameMap.get(tNum) || teamMap.get(tNum)?.pit?.teamName || tsTeamMap.get(tNum)?.name;
+                        return (
+                          <span
+                            key={`${tNum}-${idx}`}
+                            title={tName ? `#${tNum} • ${tName}` : `#${tNum}`}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontWeight: 900,
+                              background: isMine ? 'rgba(255, 209, 102, 0.18)' : 'rgba(56, 189, 248, 0.14)',
+                              border: `1px solid ${isMine ? 'var(--accent-amber)' : 'rgba(56, 189, 248, 0.45)'}`,
+                              color: isMine ? 'var(--accent-amber)' : '#7DD3FC',
+                            }}
+                          >
+                            {isMine ? '★ ' : ''}#{tNum}
+                          </span>
+                        );
+                      })
+                    )}
                   </div>
 
                   {/* Col 5: Chevron */}
@@ -886,7 +1246,11 @@ export default function MatchScheduleView({
                       }}
                     >
                       <span style={{ color: 'var(--rag-coral)' }}>
-                        ROJA EST: {m.redEst.toFixed(1)} PTS ({m.redWinPct.toFixed(1)}%)
+                        {m.hasProjection
+                          ? `ROJA EST: ${m.redEst.toFixed(1)} PTS (${m.redWinPct.toFixed(1)}%)`
+                          : m.played && m.redReal !== null
+                            ? `ROJA REAL: ${m.redReal} PTS`
+                            : 'ROJA: Sin proyección'}
                         {m.isMonteCarlo ? ` • ${m.redRpsEst.toFixed(2)} xRP • ${m.redFloresTap.toFixed(1)} fl.` : ''}
                       </span>
                       <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
@@ -894,7 +1258,11 @@ export default function MatchScheduleView({
                         Swarm R {redSummary.swarmPts.toFixed(1)}/16 • A {blueSummary.swarmPts.toFixed(1)}/16
                       </span>
                       <span style={{ color: 'var(--accent-cyan)' }}>
-                        AZUL EST: {m.blueEst.toFixed(1)} PTS ({m.blueWinPct.toFixed(1)}%)
+                        {m.hasProjection
+                          ? `AZUL EST: ${m.blueEst.toFixed(1)} PTS (${m.blueWinPct.toFixed(1)}%)`
+                          : m.played && m.blueReal !== null
+                            ? `AZUL REAL: ${m.blueReal} PTS`
+                            : 'AZUL: Sin proyección'}
                         {m.isMonteCarlo ? ` • ${m.blueRpsEst.toFixed(2)} xRP • ${m.blueFloresTap.toFixed(1)} fl.` : ''}
                       </span>
                     </div>
@@ -903,7 +1271,7 @@ export default function MatchScheduleView({
                     <div className="match-2col">
                       <div className="panel" style={{ borderTop: '3px solid var(--rag-crimson)' }}>
                         <div className="panel-header">
-                          <span className="panel-title" style={{ color: 'var(--rag-coral)' }}>Alianza Roja (R1 + R2)</span>
+                          <span className="panel-title" style={{ color: 'var(--rag-coral)' }}>Alianza Roja</span>
                           <span className="tabular" style={{ fontSize: '11.5px', fontWeight: 800, color: redSummary.swarmPts >= 16 ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
                             Swarm: {redSummary.swarmPts.toFixed(1)} / 16 pts
                           </span>
@@ -914,8 +1282,10 @@ export default function MatchScheduleView({
                           </div>
                         )}
                         <AllianceRobotDetailedCards
-                          ids={[m.red1, m.red2]}
+                          ids={m.redTeams}
                           teamMap={teamMap}
+                          tsTeamMap={tsTeamMap}
+                          eventTeamNameMap={eventTeamNameMap}
                           accent="var(--rag-crimson)"
                           myTeam={myTeam}
                           onSelect={onOpenTeamProfile}
@@ -924,7 +1294,7 @@ export default function MatchScheduleView({
 
                       <div className="panel" style={{ borderTop: '3px solid var(--accent-cyan)' }}>
                         <div className="panel-header">
-                          <span className="panel-title" style={{ color: 'var(--accent-cyan)' }}>Alianza Azul (A1 + A2)</span>
+                          <span className="panel-title" style={{ color: 'var(--accent-cyan)' }}>Alianza Azul</span>
                           <span className="tabular" style={{ fontSize: '11.5px', fontWeight: 800, color: blueSummary.swarmPts >= 16 ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
                             Swarm: {blueSummary.swarmPts.toFixed(1)} / 16 pts
                           </span>
@@ -935,8 +1305,10 @@ export default function MatchScheduleView({
                           </div>
                         )}
                         <AllianceRobotDetailedCards
-                          ids={[m.blue1, m.blue2]}
+                          ids={m.blueTeams}
                           teamMap={teamMap}
+                          tsTeamMap={tsTeamMap}
+                          eventTeamNameMap={eventTeamNameMap}
                           accent="var(--accent-cyan)"
                           myTeam={myTeam}
                           onSelect={onOpenTeamProfile}
@@ -965,8 +1337,7 @@ export default function MatchScheduleView({
 
                       <div className="panel">
                         <div className="panel-header">
-                          <span className="panel-title">Posiciones Esperadas en Auto (4 Robots)</span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>Amarillo = Empalme</span>
+                          <span className="panel-title">Posiciones Esperadas en Auto</span>
                         </div>
                         <RagnarokFieldHeatmap markers={expandedMarkers} />
                       </div>

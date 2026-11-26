@@ -626,6 +626,107 @@ body {
   gap: 14px;
 }
 
+/* Perfil de Equipo */
+.profile-shell {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.profile-sidebar {
+  position: sticky;
+  top: 122px;
+  max-height: calc(100vh - 142px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-graphite);
+  border: 1px solid var(--border-steel);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.profile-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: calc(100vh - 250px);
+  padding-right: 2px;
+}
+
+.profile-team-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-silver);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.profile-team-item:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: var(--border-steel);
+}
+
+.profile-team-item.active {
+  background: rgba(168, 85, 247, 0.16);
+  border-color: rgba(168, 85, 247, 0.55);
+  color: #ffffff;
+}
+
+.profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.profile-hero {
+  background: linear-gradient(
+    135deg,
+    rgba(168, 85, 247, 0.1) 0%,
+    rgba(19, 22, 34, 0.98) 55%,
+    rgba(56, 189, 248, 0.07) 100%
+  );
+  border: 1px solid var(--border-steel);
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.profile-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.profile-tag-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  background: var(--bg-carbon);
+  border: 1px solid var(--border-steel);
+  border-radius: 5px;
+  padding: 3px;
+}
+
+.profile-mobile-picker {
+  display: none;
+}
+
 @media (max-width: 1140px) {
   .nav-subbar-inner {
     flex-direction: column;
@@ -638,6 +739,19 @@ body {
   .topbar-controls {
     width: 100%;
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 1040px) {
+  .profile-shell {
+    grid-template-columns: 1fr;
+  }
+  .profile-sidebar {
+    position: static;
+    max-height: none;
+  }
+  .profile-team-list {
+    max-height: 210px;
   }
 }
 

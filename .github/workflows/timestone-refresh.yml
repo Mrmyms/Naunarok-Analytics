@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       event_code:
-        description: "Código de evento para las pestañas (ej. MXTO)"
+        description: "Código de evento para las pestañas (ej. MXTLQ)"
         required: true
-        default: "MXTO"
+        default: "MXTLQ"
         type: string
       ftcscout_code:
         description: "Código oficial en FTCScout (opcional si coincide con event_code)"

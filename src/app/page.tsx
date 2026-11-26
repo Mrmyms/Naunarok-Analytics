@@ -2,13 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AllianceMatchFinder from '@/components/AllianceMatchFinder';
-import DistributionBars from '@/components/DistributionBars';
 import DuelComparisonBars from '@/components/DuelComparisonBars';
 import MatchScheduleView from '@/components/MatchScheduleView';
-import RagnarokFieldHeatmap from '@/components/RagnarokFieldHeatmap';
-import TeamHistoricChart from '@/components/TeamHistoricChart';
-import TeamPitCard, { PitComparePanel } from '@/components/TeamPitCard';
-import TeamRadarChart from '@/components/TeamRadarChart';
+import TeamProfileView from '@/components/TeamProfileView';
 import {
   SCORING_PROFILES,
   computeTeamClassification,
@@ -20,7 +16,7 @@ import {
   type ScoringProfileId,
   type TeamClassification,
 } from '@/lib/roles';
-import type { AnalyticsPayload, ScheduleMatch, TeamAnalytics } from '@/lib/types';
+import type { AnalyticsPayload, EventRosterTeam, ScheduleMatch, TeamAnalytics } from '@/lib/types';
 
 type ViewTab = 'ranking' | 'equipo' | 'match' | 'alianza' | 'perfect_match' | 'standings';
 type SortKey =
@@ -40,6 +36,7 @@ type SortKey =
   | 'driverAvg'
   | 'maxNet'
   | 'classScore'
+  | 'epaSim'
   | 'opr'
   | 'dpr'
   | 'ccwm'
@@ -47,6 +44,7 @@ type SortKey =
 
 const EVENT_STORAGE_KEY = 'ragnarok_analytics_event_v1';
 const PICK_TAGS_STORAGE_KEY = 'ragnarok_pick_tags_v1';
+const DEFAULT_EVENT_CODE = 'MXTLQ';
 
 export default function RagnarokAnalyticsPage() {
   const [tab, setTab] = useState<ViewTab>('ranking');
@@ -70,7 +68,6 @@ export default function RagnarokAnalyticsPage() {
   // Team Profile + 1v1 Compare state
   const [selectedTeamNum, setSelectedTeamNum] = useState<number>(0);
   const [compareTeamNum, setCompareTeamNum] = useState<number>(0);
-  const [profileSection, setProfileSection] = useState<'resumen' | 'graficas' | 'bitacora'>('resumen');
 
   // Alliance Playoffs Simulator (2 starters + optional backup)
   const [allyCap, setAllyCap] = useState<number>(0);
@@ -81,16 +78,23 @@ export default function RagnarokAnalyticsPage() {
   const [oppSub, setOppSub] = useState<number>(0);
 
   // Optional FTCScout / Timestone dynamic event selector
-  const [eventCodeInput, setEventCodeInput] = useState('');
+  const [eventCodeInput, setEventCodeInput] = useState(DEFAULT_EVENT_CODE);
   const [eventSeason, setEventSeason] = useState(2026);
-  const [loadedEvent, setLoadedEvent] = useState<{ code: string; name: string; season: number } | null>(null);
+  const [loadedEvent, setLoadedEvent] = useState<{
+    code: string;
+    name: string;
+    season: number;
+    timezone?: string | null;
+    hasMatches?: boolean;
+  } | null>(null);
+  const [eventTeams, setEventTeams] = useState<EventRosterTeam[]>([]);
   const [scheduleMatches, setScheduleMatches] = useState<ScheduleMatch[]>([]);
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
   const [showEventPicker, setShowEventPicker] = useState(false);
   const [searchingEvents, setSearchingEvents] = useState(false);
   const [eventSearchResults, setEventSearchResults] = useState<
-    { code: string; name: string; regionCode?: string; start?: string }[]
+    { code: string; name: string; regionCode?: string; start?: string; hasMatches?: boolean }[]
   >([]);
 
   // Timestone refresh & staleness (>1h) control
@@ -219,17 +223,52 @@ export default function RagnarokAnalyticsPage() {
     [eventSeason, fetchAnalytics, payload?.timestone?.eventCode, payload?.timestone?.updatedAt, stopPolling]
   );
 
+  const syncEventFromFTCScout = useCallback(async (code: string, season: number) => {
+    const clean = code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+    if (!clean) return;
+    try {
+      const res = await fetch(`/api/event?season=${season}&code=${encodeURIComponent(clean)}`);
+      const json = await res.json();
+      if (res.ok && json.success && json.event) {
+        const nextTeams: EventRosterTeam[] = Array.isArray(json.teams) ? json.teams : [];
+        const nextMatches: ScheduleMatch[] = Array.isArray(json.matches) ? json.matches : [];
+        setLoadedEvent(json.event);
+        loadedEventRef.current = json.event.code;
+        setEventTeams(nextTeams);
+        setScheduleMatches(nextMatches);
+        setEventCodeInput(json.event.code);
+        try {
+          localStorage.setItem(
+            EVENT_STORAGE_KEY,
+            JSON.stringify({ event: json.event, teams: nextTeams, matches: nextMatches })
+          );
+        } catch {
+          // ignore storage quota
+        }
+      }
+    } catch {
+      // keep existing state when offline
+    }
+  }, []);
+
   useEffect(() => {
-    let initialEvent: string | undefined;
+    let initialEvent = DEFAULT_EVENT_CODE;
+    let initialSeason = eventSeason;
     try {
       const savedEvent = localStorage.getItem(EVENT_STORAGE_KEY);
       if (savedEvent) {
         const parsed = JSON.parse(savedEvent);
         if (parsed.event) {
           setLoadedEvent(parsed.event);
-          initialEvent = parsed.event.code;
-          loadedEventRef.current = parsed.event.code;
+          initialEvent = parsed.event.code || DEFAULT_EVENT_CODE;
+          loadedEventRef.current = initialEvent;
+          if (parsed.event.season) {
+            initialSeason = Number(parsed.event.season);
+            setEventSeason(initialSeason);
+          }
+          setEventCodeInput(initialEvent);
         }
+        if (Array.isArray(parsed.teams)) setEventTeams(parsed.teams);
         if (Array.isArray(parsed.matches)) setScheduleMatches(parsed.matches);
       }
       const savedTags = localStorage.getItem(PICK_TAGS_STORAGE_KEY);
@@ -239,6 +278,8 @@ export default function RagnarokAnalyticsPage() {
     } catch {
       // ignore localStorage read errors
     }
+
+    syncEventFromFTCScout(initialEvent, initialSeason);
 
     fetchAnalytics(initialEvent).then((data) => {
       const ts = data?.timestone;
@@ -254,10 +295,8 @@ export default function RagnarokAnalyticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cyclePickTag = (teamNum: number) => {
+  const setPickTag = (teamNum: number, next: PickTag) => {
     setPickTags((prev) => {
-      const curr = prev[teamNum] || 'none';
-      const next = NEXT_PICK_TAG[curr];
       const updated = { ...prev, [teamNum]: next };
       if (next === 'none') delete updated[teamNum];
       try {
@@ -267,6 +306,11 @@ export default function RagnarokAnalyticsPage() {
       }
       return updated;
     });
+  };
+
+  const cyclePickTag = (teamNum: number) => {
+    const curr = pickTags[teamNum] || 'none';
+    setPickTag(teamNum, NEXT_PICK_TAG[curr]);
   };
 
   const teams = useMemo(() => payload?.teams || [], [payload]);
@@ -285,12 +329,20 @@ export default function RagnarokAnalyticsPage() {
       const res = await fetch(`/api/event?season=${eventSeason}&code=${encodeURIComponent(code)}`);
       const json = await res.json();
 
-      let nextEvent = { code, name: code, season: eventSeason };
+      let nextEvent: {
+        code: string;
+        name: string;
+        season: number;
+        timezone?: string | null;
+        hasMatches?: boolean;
+      } = { code, name: code, season: eventSeason };
+      let nextTeams: EventRosterTeam[] = [];
       let nextMatches: ScheduleMatch[] = [];
 
       if (res.ok && json.success && json.event) {
         nextEvent = json.event;
-        nextMatches = json.matches || [];
+        nextTeams = Array.isArray(json.teams) ? json.teams : [];
+        nextMatches = Array.isArray(json.matches) ? json.matches : [];
       } else {
         // Código personalizado local (no registrado en FTCScout): permitir activarlo para Timestone/Sheets
         setEventError(`'${code}' no se encontró en FTCScout ${eventSeason}; activado usando pestañas locales de Google Sheets.`);
@@ -298,10 +350,14 @@ export default function RagnarokAnalyticsPage() {
 
       setLoadedEvent(nextEvent);
       loadedEventRef.current = nextEvent.code;
+      setEventTeams(nextTeams);
       setScheduleMatches(nextMatches);
       setEventCodeInput(nextEvent.code);
       setShowEventPicker(false);
-      localStorage.setItem(EVENT_STORAGE_KEY, JSON.stringify({ event: nextEvent, matches: nextMatches }));
+      localStorage.setItem(
+        EVENT_STORAGE_KEY,
+        JSON.stringify({ event: nextEvent, teams: nextTeams, matches: nextMatches })
+      );
 
       const fresh = await fetchAnalytics(nextEvent.code);
       const ts = fresh?.timestone;
@@ -344,17 +400,13 @@ export default function RagnarokAnalyticsPage() {
     return map;
   }, [teams, scoringProfile]);
 
-  const hasOprDpr = useMemo(
-    () => teams.some((t) => t.timestone?.opr !== null && t.timestone?.opr !== undefined),
-    [teams]
-  );
-
   const filteredTeams = useMemo(() => {
     const tagPriority: Record<PickTag, number> = { top: 0, pick: 1, none: 2, avoid: 3, drafted: 4 };
     const q = searchTeam.trim().toLowerCase();
 
     const getNullableMetric = (t: TeamAnalytics, key: SortKey): number | null => {
       if (key === 'classScore') return classificationByTeam.get(t.team)?.score ?? 0;
+      if (key === 'epaSim') return t.timestone?.epa ?? null;
       if (key === 'opr') return t.timestone?.opr ?? null;
       if (key === 'dpr') return t.timestone?.dpr ?? null;
       if (key === 'ccwm') return t.timestone?.ccwm ?? null;
@@ -423,13 +475,6 @@ export default function RagnarokAnalyticsPage() {
 
   const selectedTeam = teamMap.get(selectedTeamNum) || teams[0] || null;
   const compareTeam = compareTeamNum && compareTeamNum !== selectedTeam?.team ? teamMap.get(compareTeamNum) || null : null;
-
-  const selectedTeamIndex = selectedTeam ? teams.findIndex((t) => t.team === selectedTeam.team) : -1;
-  const stepSelectedTeam = (delta: number) => {
-    if (!teams.length || selectedTeamIndex === -1) return;
-    const nextIdx = (selectedTeamIndex + delta + teams.length) % teams.length;
-    setSelectedTeamNum(teams[nextIdx].team);
-  };
 
   const topEpaTeam = teams[0] || null;
   const bestAutoTeam = useMemo(
@@ -656,21 +701,17 @@ export default function RagnarokAnalyticsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <span className="panel-title">Selector Dinámico de Evento (FTCScout + Google Sheets)</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {loadedEvent && (
+                {loadedEvent && loadedEvent.code !== DEFAULT_EVENT_CODE && (
                   <button
                     type="button"
                     onClick={() => {
-                      setLoadedEvent(null);
-                      loadedEventRef.current = undefined;
-                      setScheduleMatches([]);
-                      setEventCodeInput('');
                       localStorage.removeItem(EVENT_STORAGE_KEY);
-                      fetchAnalytics();
+                      activateEvent(DEFAULT_EVENT_CODE);
                     }}
                     className="btn-ghost"
                     style={{ padding: '4px 9px', fontSize: '11px' }}
                   >
-                    Restablecer ({loadedEvent.code})
+                    Restablecer ({DEFAULT_EVENT_CODE})
                   </button>
                 )}
                 <button
@@ -691,7 +732,7 @@ export default function RagnarokAnalyticsPage() {
               </select>
               <input
                 type="text"
-                placeholder="Buscar nombre o código (ej. MXTO, Monterrey, MXCMP...)"
+                placeholder="Buscar nombre o código (ej. MXTLQ, Monterrey, MXCMP...)"
                 value={eventCodeInput}
                 onChange={(e) => setEventCodeInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -733,10 +774,22 @@ export default function RagnarokAnalyticsPage() {
                     type="button"
                     onClick={() => activateEvent(ev.code)}
                     className="btn-ghost"
-                    style={{ padding: '5px 10px', fontSize: '11px', textAlign: 'left' }}
+                    style={{ padding: '5px 10px', fontSize: '11px', textAlign: 'left', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                   >
                     <strong style={{ color: 'var(--bey-cyan)' }}>{ev.code}</strong> · {ev.name}
                     {ev.regionCode ? ` (${ev.regionCode})` : ''}
+                    <span
+                      style={{
+                        fontSize: '9.5px',
+                        fontWeight: 800,
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        background: ev.hasMatches ? 'rgba(16, 185, 129, 0.16)' : 'rgba(148, 163, 184, 0.14)',
+                        color: ev.hasMatches ? 'var(--accent-emerald)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {ev.hasMatches ? '✓ Horario' : 'Sin matches'}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -795,7 +848,6 @@ export default function RagnarokAnalyticsPage() {
               <div className="kpi-card">
                 <span className="kpi-label">Partidos Analizados</span>
                 <span className="kpi-value tabular">{payload?.matchesCount ?? 0}</span>
-                <span className="kpi-sub">Registros válidos del torneo</span>
               </div>
               <div className="kpi-card">
                 <span className="kpi-label">Equipos Activos</span>
@@ -844,9 +896,6 @@ export default function RagnarokAnalyticsPage() {
                     );
                   })}
                 </div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
-                  {SCORING_PROFILES[scoringProfile].description}
-                </span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', borderTop: '1px solid var(--border-steel)', paddingTop: '10px' }}>
@@ -907,9 +956,6 @@ export default function RagnarokAnalyticsPage() {
                     Ocultar Drafted
                   </button>
                 </div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                  Toca Tag para marcar ★ TOP / DRAFTED • Clic en fila abre perfil
-                </span>
               </div>
             </div>
 
@@ -923,6 +969,12 @@ export default function RagnarokAnalyticsPage() {
                       { k: 'rank', l: 'Rank' },
                       { k: 'team', l: 'Equipo' },
                       { k: 'classScore', l: 'Tier / Score' },
+                      { k: 'epaNetAvg', l: 'EPA Neto' },
+                      { k: 'epaSim', l: 'EPA Sim.' },
+                      { k: 'rankCombAvg', l: 'Prom OPR/DPR' },
+                      { k: 'opr', l: 'OPR (#Off)' },
+                      { k: 'dpr', l: 'DPR (#Def)' },
+                      { k: 'ccwm', l: 'CCWM' },
                     ].map((col) => (
                       <th key={col.k} onClick={() => handleSort(col.k as SortKey)}>
                         {col.l} {sortKey === col.k ? (sortAsc ? '▲' : '▼') : ''}
@@ -932,7 +984,6 @@ export default function RagnarokAnalyticsPage() {
                     <th>Pit</th>
                     {[
                       { k: 'matchesPlayed', l: 'PJ' },
-                      { k: 'epaNetAvg', l: 'EPA Neto' },
                       { k: 'autoAvg', l: 'Auto' },
                       { k: 'teleAvg', l: 'TeleOp' },
                       { k: 'balancinAutoAvg', l: 'Bal. Auto' },
@@ -949,25 +1000,13 @@ export default function RagnarokAnalyticsPage() {
                         {col.l} {sortKey === col.k ? (sortAsc ? '▲' : '▼') : ''}
                       </th>
                     ))}
-                    {hasOprDpr &&
-                      [
-                        { k: 'opr', l: 'OPR (#Off)' },
-                        { k: 'dpr', l: 'DPR (#Def)' },
-                        { k: 'ccwm', l: 'CCWM' },
-                        { k: 'rankCombAvg', l: 'Prom OPR/DPR' },
-                      ].map((col) => (
-                        <th key={col.k} onClick={() => handleSort(col.k as SortKey)}>
-                          {col.l} {sortKey === col.k ? (sortAsc ? '▲' : '▼') : ''}
-                        </th>
-                      ))}
-                    {timestoneData?.available && <th title="EPA ponderado Timestone (y EPA Operativo)">EPA Sim.</th>}
                   </tr>
                 </thead>
                 <tbody className="tabular">
                   {filteredTeams.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={19 + (hasOprDpr ? 4 : 0) + (timestoneData?.available ? 1 : 0)}
+                        colSpan={24}
                         style={{ padding: '28px', color: 'var(--text-muted)' }}
                       >
                         {loading ? 'Cargando datos...' : 'Sin equipos que coincidan con el filtro.'}
@@ -1038,6 +1077,76 @@ export default function RagnarokAnalyticsPage() {
                               </span>
                             )}
                           </td>
+                          <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{t.epaNetAvg.toFixed(1)}</td>
+                          <td
+                            title={
+                              t.timestone
+                                ? `Operativo: ${t.timestone.epaOperational.toFixed(1)} • Fallas excl.: ${t.timestone.excludedOldFailures}`
+                                : 'Sin datos en Timestone'
+                            }
+                            style={{ fontWeight: 800, color: 'var(--bey-cyan)' }}
+                          >
+                            {t.timestone ? (
+                              <>
+                                {t.timestone.epa.toFixed(1)}
+                                {Math.abs(t.timestone.epaOperational - t.timestone.epa) >= 1 && (
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                                    (Op {t.timestone.epaOperational.toFixed(0)})
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td style={{ color: 'var(--text-silver)', fontWeight: 800 }}>
+                            {t.timestone?.rankCombAvg !== null && t.timestone?.rankCombAvg !== undefined
+                              ? `#${t.timestone.rankCombAvg.toFixed(1)}`
+                              : '—'}
+                          </td>
+                          <td style={{ color: '#7DD3FC', fontWeight: 800 }}>
+                            {t.timestone?.opr !== null && t.timestone?.opr !== undefined ? (
+                              <>
+                                {t.timestone.opr.toFixed(1)}
+                                {t.timestone.rankOff ? (
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                                    (#{t.timestone.rankOff})
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td style={{ color: '#34D399', fontWeight: 800 }}>
+                            {t.timestone?.dpr !== null && t.timestone?.dpr !== undefined ? (
+                              <>
+                                {t.timestone.dpr.toFixed(1)}
+                                {t.timestone.rankDef ? (
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                                    (#{t.timestone.rankDef})
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              fontWeight: 800,
+                              color:
+                                t.timestone?.ccwm !== null && t.timestone?.ccwm !== undefined
+                                  ? t.timestone.ccwm >= 0
+                                    ? 'var(--accent-amber)'
+                                    : 'var(--rag-coral)'
+                                  : 'var(--text-muted)',
+                            }}
+                          >
+                            {t.timestone?.ccwm !== null && t.timestone?.ccwm !== undefined
+                              ? `${t.timestone.ccwm >= 0 ? '+' : ''}${t.timestone.ccwm.toFixed(1)}`
+                              : '—'}
+                          </td>
                           <td>
                             <span
                               style={{
@@ -1074,7 +1183,6 @@ export default function RagnarokAnalyticsPage() {
                             )}
                           </td>
                           <td>{t.matchesPlayed}</td>
-                          <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{t.epaNetAvg.toFixed(1)}</td>
                           <td style={{ color: 'var(--accent-cyan)' }}>{t.autoAvg.toFixed(1)}</td>
                           <td style={{ color: 'var(--accent-amber)' }}>{t.teleAvg.toFixed(1)}</td>
                           <td style={{ color: '#93C5FD' }}>{t.balancinAutoAvg.toFixed(1)}</td>
@@ -1100,81 +1208,6 @@ export default function RagnarokAnalyticsPage() {
                           </td>
                           <td>{t.driverAvg.toFixed(1)}</td>
                           <td style={{ color: 'var(--accent-amber)' }}>{t.maxNet}</td>
-                          {hasOprDpr && (
-                            <>
-                              <td style={{ color: '#7DD3FC', fontWeight: 800 }}>
-                                {t.timestone?.opr !== null && t.timestone?.opr !== undefined ? (
-                                  <>
-                                    {t.timestone.opr.toFixed(1)}
-                                    {t.timestone.rankOff ? (
-                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                                        (#{t.timestone.rankOff})
-                                      </span>
-                                    ) : null}
-                                  </>
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
-                              <td style={{ color: '#34D399', fontWeight: 800 }}>
-                                {t.timestone?.dpr !== null && t.timestone?.dpr !== undefined ? (
-                                  <>
-                                    {t.timestone.dpr.toFixed(1)}
-                                    {t.timestone.rankDef ? (
-                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                                        (#{t.timestone.rankDef})
-                                      </span>
-                                    ) : null}
-                                  </>
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
-                              <td
-                                style={{
-                                  fontWeight: 800,
-                                  color:
-                                    t.timestone?.ccwm !== null && t.timestone?.ccwm !== undefined
-                                      ? t.timestone.ccwm >= 0
-                                        ? 'var(--accent-amber)'
-                                        : 'var(--rag-coral)'
-                                      : 'var(--text-muted)',
-                                }}
-                              >
-                                {t.timestone?.ccwm !== null && t.timestone?.ccwm !== undefined
-                                  ? `${t.timestone.ccwm >= 0 ? '+' : ''}${t.timestone.ccwm.toFixed(1)}`
-                                  : '—'}
-                              </td>
-                              <td style={{ color: 'var(--text-silver)', fontWeight: 800 }}>
-                                {t.timestone?.rankCombAvg !== null && t.timestone?.rankCombAvg !== undefined
-                                  ? `#${t.timestone.rankCombAvg.toFixed(1)}`
-                                  : '—'}
-                              </td>
-                            </>
-                          )}
-                          {timestoneData?.available && (
-                            <td
-                              title={
-                                t.timestone
-                                  ? `Operativo: ${t.timestone.epaOperational.toFixed(1)} • Fallas excl.: ${t.timestone.excludedOldFailures}`
-                                  : 'Sin datos en Timestone'
-                              }
-                              style={{ fontWeight: 800, color: 'var(--bey-cyan)' }}
-                            >
-                              {t.timestone ? (
-                                <>
-                                  {t.timestone.epa.toFixed(1)}
-                                  {Math.abs(t.timestone.epaOperational - t.timestone.epa) >= 1 && (
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                                      (Op {t.timestone.epaOperational.toFixed(0)})
-                                    </span>
-                                  )}
-                                </>
-                              ) : (
-                                '—'
-                              )}
-                            </td>
-                          )}
                         </tr>
                       );
                     })
@@ -1187,658 +1220,25 @@ export default function RagnarokAnalyticsPage() {
 
         {/* ================= 2. PERFIL DE EQUIPO ================= */}
         {tab === 'equipo' && (
-          <>
-            {/* Header Estructurado de Equipo */}
-            <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Fila 1: Selector, Comparador, Rol y Picklist */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <button type="button" onClick={() => stepSelectedTeam(-1)} className="btn-ghost" aria-label="Equipo anterior">
-                    ‹
-                  </button>
-                  <select
-                    value={selectedTeam?.team ?? ''}
-                    onChange={(e) => setSelectedTeamNum(Number(e.target.value))}
-                    className="select-rag tabular"
-                  >
-                    {teams.map((t) => {
-                      const labelName = t.pit?.teamName || t.timestone?.name;
-                      return (
-                        <option key={t.team} value={t.team}>
-                          #{t.team}{labelName ? ` • ${labelName}` : ''} (Rank #{t.rank} • EPA {t.epaNetAvg.toFixed(1)}{t.pit ? ' • Pit ✓' : ''})
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <button type="button" onClick={() => stepSelectedTeam(1)} className="btn-ghost" aria-label="Equipo siguiente">
-                    ›
-                  </button>
-
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700, marginLeft: '6px' }}>vs:</span>
-                  <select
-                    value={compareTeamNum}
-                    onChange={(e) => setCompareTeamNum(Number(e.target.value))}
-                    className="select-rag tabular"
-                  >
-                    <option value={0}>Comparar con...</option>
-                    {teams
-                      .filter((t) => t.team !== selectedTeam?.team)
-                      .map((t) => (
-                        <option key={t.team} value={t.team}>
-                          #{t.team}{t.pit?.teamName ? ` • ${t.pit.teamName}` : ''} (EPA {t.epaNetAvg.toFixed(1)})
-                        </option>
-                      ))}
-                  </select>
-                  {compareTeam && (
-                    <button
-                      type="button"
-                      onClick={() => setCompareTeamNum(0)}
-                      className="btn-ghost"
-                      title="Quitar comparación 1v1"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                {selectedTeam && (
-                  <div className="tabular" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    {(() => {
-                      const roleMeta = detectRobotRole(selectedTeam);
-                      const tagMeta = PICK_TAG_META[pickTags[selectedTeam.team] || 'none'];
-                      return (
-                        <>
-                          <span
-                            style={{
-                              background: roleMeta.bg,
-                              color: roleMeta.color,
-                              border: `1px solid ${roleMeta.color}44`,
-                              borderRadius: '4px',
-                              padding: '4px 8px',
-                              fontSize: '10.5px',
-                              fontWeight: 800,
-                            }}
-                          >
-                            {roleMeta.role}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => cyclePickTag(selectedTeam.team)}
-                            style={{
-                              background: tagMeta.bg,
-                              border: `1px solid ${tagMeta.border}`,
-                              color: tagMeta.color,
-                              borderRadius: '4px',
-                              padding: '4px 9px',
-                              fontSize: '10.5px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Tag: {tagMeta.label}
-                          </button>
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-
-              {/* Fila 2: 5 KPIs clave del equipo */}
-              {selectedTeam && (
-                <div className="profile-kpi-strip tabular">
-                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                      EPA Neto (Rank #{selectedTeam.rank})
-                    </div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--bey-purple)', marginTop: '2px' }}>
-                      {selectedTeam.epaNetAvg.toFixed(1)} pts
-                    </div>
-                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                      Rango {selectedTeam.minNet}–{selectedTeam.maxNet} • {selectedTeam.matchesPlayed} PJ
-                    </div>
-                  </div>
-
-                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                      Auto / TeleOp
-                    </div>
-                    <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--accent-cyan)', marginTop: '3px' }}>
-                      {selectedTeam.autoAvg.toFixed(1)} <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>/</span>{' '}
-                      <span style={{ color: 'var(--accent-amber)' }}>{selectedTeam.teleAvg.toFixed(1)}</span>
-                    </div>
-                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                      Bal {(selectedTeam.balancinAutoAvg + selectedTeam.balancinTeleAvg).toFixed(1)} • Flor {selectedTeam.florAvg.toFixed(1)}
-                    </div>
-                  </div>
-
-                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                      Confiabilidad
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '20px',
-                        fontWeight: 900,
-                        color: selectedTeam.reliabilityPct >= 90 ? 'var(--accent-emerald)' : selectedTeam.reliabilityPct < 70 ? 'var(--rag-coral)' : 'var(--text-white)',
-                        marginTop: '2px',
-                      }}
-                    >
-                      {selectedTeam.reliabilityPct.toFixed(0)}%
-                    </div>
-                    <div style={{ fontSize: '10.5px', color: selectedTeam.foulsAvg > 15 ? 'var(--rag-coral)' : 'var(--text-muted)' }}>
-                      Faltas prom: {selectedTeam.foulsAvg.toFixed(1)} pts
-                    </div>
-                  </div>
-
-                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                      Piloto &amp; Swarm
-                    </div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--accent-amber)', marginTop: '2px' }}>
-                      {selectedTeam.driverAvg.toFixed(1)} / 5
-                    </div>
-                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                      Swarm prom: {selectedTeam.swarmPtsAvg.toFixed(1)} pts
-                    </div>
-                  </div>
-
-                  <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '6px', padding: '10px 12px' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                      Pit &amp; Fotos
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '16px',
-                        fontWeight: 900,
-                        color: selectedTeam.pit ? 'var(--accent-emerald)' : 'var(--text-muted)',
-                        marginTop: '4px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {selectedTeam.pit ? selectedTeam.pit.chassisType || 'Pit ✓' : 'Sin Pit'}
-                    </div>
-                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                      {selectedTeam.pit
-                        ? `${selectedTeam.pit.photos.length} foto${selectedTeam.pit.photos.length === 1 ? '' : 's'} • ${selectedTeam.pit.weightLb !== null ? `${selectedTeam.pit.weightLb} lb` : 'peso —'}`
-                        : 'Sin ficha registrada'}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Fila 3: Sub-pestañas del Perfil */}
-              {selectedTeam && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                  <div className="profile-subtabs" role="tablist" aria-label="Secciones del perfil de equipo">
-                    {(
-                      [
-                        { id: 'resumen', label: 'Resumen & Pit' },
-                        { id: 'graficas', label: 'Gráficas & Cancha' },
-                        { id: 'bitacora', label: `Bitácora (${selectedTeam.history.length})` },
-                      ] as const
-                    ).map((sec) => (
-                      <button
-                        key={sec.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={profileSection === sec.id}
-                        onClick={() => setProfileSection(sec.id)}
-                        className={`nav-tab ${profileSection === sec.id ? 'active' : ''}`}
-                      >
-                        {sec.label}
-                      </button>
-                    ))}
-                  </div>
-                  <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                    Zona favorita Auto: <strong style={{ color: 'var(--text-white)' }}>{selectedTeam.topStartPos}</strong>
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {!selectedTeam ? (
-              <div className="panel" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                No hay equipos registrados todavía.
-              </div>
-            ) : (
-              <>
-                {/* SECCIÓN 1: RESUMEN & PIT */}
-                {profileSection === 'resumen' && (
-                  <>
-                    {compareTeam && (
-                      <>
-                        <DuelComparisonBars
-                          leftTitle={`#${selectedTeam.team}`}
-                          rightTitle={`#${compareTeam.team}`}
-                          metrics={[
-                            {
-                              label: `Score (${SCORING_PROFILES[scoringProfile].shortLabel})`,
-                              leftVal: classificationByTeam.get(selectedTeam.team)?.score ?? 0,
-                              rightVal: classificationByTeam.get(compareTeam.team)?.score ?? 0,
-                            },
-                            { label: 'EPA Neto', leftVal: selectedTeam.epaNetAvg, rightVal: compareTeam.epaNetAvg },
-                            ...(selectedTeam.timestone?.opr != null && compareTeam.timestone?.opr != null
-                              ? [
-                                { label: 'OPR', leftVal: selectedTeam.timestone.opr, rightVal: compareTeam.timestone.opr },
-                                {
-                                  label: 'DPR (menor=mejor)',
-                                  leftVal: selectedTeam.timestone.dpr ?? 0,
-                                  rightVal: compareTeam.timestone.dpr ?? 0,
-                                  lowerIsBetter: true,
-                                },
-                                {
-                                  label: 'CCWM (OPR−DPR)',
-                                  leftVal: selectedTeam.timestone.ccwm ?? 0,
-                                  rightVal: compareTeam.timestone.ccwm ?? 0,
-                                },
-                              ]
-                              : []),
-                            { label: 'Auto Prom', leftVal: selectedTeam.autoAvg, rightVal: compareTeam.autoAvg },
-                            { label: 'TeleOp Prom', leftVal: selectedTeam.teleAvg, rightVal: compareTeam.teleAvg },
-                            {
-                              label: 'Balancín Total',
-                              leftVal: selectedTeam.balancinAutoAvg + selectedTeam.balancinTeleAvg,
-                              rightVal: compareTeam.balancinAutoAvg + compareTeam.balancinTeleAvg,
-                            },
-                            { label: 'Flor Total', leftVal: selectedTeam.florAvg, rightVal: compareTeam.florAvg },
-                            { label: 'Garden Prom', leftVal: selectedTeam.gardenAvg, rightVal: compareTeam.gardenAvg },
-                            { label: 'Confiabilidad', leftVal: selectedTeam.reliabilityPct, rightVal: compareTeam.reliabilityPct, unit: '%' },
-                            { label: 'Faltas Prom', leftVal: selectedTeam.foulsAvg, rightVal: compareTeam.foulsAvg, lowerIsBetter: true },
-                            { label: 'Piloto (1–5)', leftVal: selectedTeam.driverAvg, rightVal: compareTeam.driverAvg },
-                          ]}
-                        />
-                        <PitComparePanel left={selectedTeam} right={compareTeam} />
-                      </>
-                    )}
-
-                    {/* Panel de Clasificación por Características & OPR/DPR */}
-                    {(() => {
-                      const cls = classificationByTeam.get(selectedTeam.team);
-                      if (!cls) return null;
-                      const tsMetric = selectedTeam.timestone;
-                      const hasTeamOpr = tsMetric?.opr !== null && tsMetric?.opr !== undefined;
-                      const charBars: { label: string; val: number; color: string }[] = [
-                        { label: 'Ofensiva (EPA/OPR)', val: cls.breakdown.offensive, color: 'var(--bey-purple)' },
-                        { label: 'Defensa (DPR/Garden)', val: cls.breakdown.defensive, color: 'var(--accent-emerald)' },
-                        { label: 'Autónomo', val: cls.breakdown.auto, color: 'var(--accent-cyan)' },
-                        { label: 'Confiabilidad', val: cls.breakdown.reliability, color: '#60A5FA' },
-                        { label: 'Disciplina', val: cls.breakdown.discipline, color: 'var(--accent-amber)' },
-                        { label: 'Piloto', val: cls.breakdown.driver, color: '#FB7185' },
-                      ];
-
-                      return (
-                        <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          <div className="panel-header" style={{ marginBottom: 0, flexWrap: 'wrap', gap: '8px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                              <span className="panel-title">Clasificación por Características &amp; OPR/DPR</span>
-                              <span
-                                className="tabular"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  background: cls.tierBg,
-                                  border: `1px solid ${cls.tierColor}66`,
-                                  color: cls.tierColor,
-                                  borderRadius: '4px',
-                                  padding: '3px 9px',
-                                  fontSize: '12px',
-                                  fontWeight: 900,
-                                }}
-                              >
-                                Tier {cls.tier} • {cls.score.toFixed(1)}/100
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                              {(Object.keys(SCORING_PROFILES) as ScoringProfileId[]).map((pid) => (
-                                <button
-                                  key={pid}
-                                  type="button"
-                                  onClick={() => setScoringProfile(pid)}
-                                  className={`btn-ghost ${scoringProfile === pid ? 'active' : ''}`}
-                                  style={{ padding: '4px 8px', fontSize: '10.5px' }}
-                                >
-                                  {SCORING_PROFILES[pid].shortLabel}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {hasTeamOpr && tsMetric && (
-                            <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px' }}>
-                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
-                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                                  OPR (Ofensivo)
-                                </div>
-                                <div style={{ fontSize: '18px', fontWeight: 900, color: '#7DD3FC', marginTop: '2px' }}>
-                                  {tsMetric.opr!.toFixed(1)}
-                                  {tsMetric.rankOff ? (
-                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                                      #{tsMetric.rankOff}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
-                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                                  DPR (Defensivo)
-                                </div>
-                                <div style={{ fontSize: '18px', fontWeight: 900, color: '#34D399', marginTop: '2px' }}>
-                                  {tsMetric.dpr!.toFixed(1)}
-                                  {tsMetric.rankDef ? (
-                                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                                      #{tsMetric.rankDef}
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
-                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                                  CCWM (OPR − DPR)
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '18px',
-                                    fontWeight: 900,
-                                    color: (tsMetric.ccwm ?? 0) >= 0 ? 'var(--accent-amber)' : 'var(--rag-coral)',
-                                    marginTop: '2px',
-                                  }}
-                                >
-                                  {(tsMetric.ccwm ?? 0) >= 0 ? '+' : ''}
-                                  {(tsMetric.ccwm ?? 0).toFixed(1)}
-                                </div>
-                              </div>
-
-                              <div style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '10px 12px' }}>
-                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
-                                  Rank Prom. OPR/DPR
-                                </div>
-                                <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--text-white)', marginTop: '2px' }}>
-                                  {tsMetric.rankCombAvg != null ? `#${tsMetric.rankCombAvg.toFixed(1)}` : '—'}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-                            {charBars.map((bar) => (
-                              <div
-                                key={bar.label}
-                                style={{
-                                  background: 'var(--bg-carbon)',
-                                  border: '1px solid var(--border-steel)',
-                                  borderRadius: '4px',
-                                  padding: '8px 10px',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '5px',
-                                }}
-                              >
-                                <div className="tabular" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 800 }}>
-                                  <span style={{ color: 'var(--text-silver)' }}>{bar.label}</span>
-                                  <span style={{ color: bar.color }}>{bar.val}/100</span>
-                                </div>
-                                <div style={{ height: '6px', width: '100%', background: '#090A0F', borderRadius: '3px', overflow: 'hidden' }}>
-                                  <div style={{ height: '100%', width: `${bar.val}%`, background: bar.color }} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    <TeamPitCard team={selectedTeam} />
-
-                    <div className="split-2col">
-                      <div className="panel">
-                        <div className="panel-header">
-                          <span className="panel-title">Eficiencia, RP &amp; Confiabilidad</span>
-                        </div>
-                        <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '12px' }}>
-                          {[
-                            { l: 'Auto [Min·Prom·Max]', v: `${selectedTeam.minAuto} · ${selectedTeam.autoAvg.toFixed(1)} · ${selectedTeam.maxAuto}`, c: '#FAFAFA' },
-                            { l: 'Tele [Min·Prom·Max]', v: `${selectedTeam.minTele} · ${selectedTeam.teleAvg.toFixed(1)} · ${selectedTeam.maxTele}`, c: '#FAFAFA' },
-                            { l: 'Neto [Min·Prom·Max]', v: `${selectedTeam.minNet} · ${selectedTeam.epaNetAvg.toFixed(1)} · ${selectedTeam.maxNet}`, c: '#FFD166' },
-                          ].map((rng) => (
-                            <div key={rng.l} style={{ background: 'var(--bg-carbon)', border: '1px solid var(--border-steel)', borderRadius: '4px', padding: '8px 10px' }}>
-                              <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: 700 }}>{rng.l}</div>
-                              <div style={{ fontSize: '13px', fontWeight: 900, color: rng.c, marginTop: '2px' }}>[ {rng.v} ]</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="tabular" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
-                          {[
-                            { l: 'Auto Leave', v: `${selectedTeam.autoLeavePct.toFixed(0)}%`, c: '#94A3B8' },
-                            { l: 'Auto Park', v: `${selectedTeam.autoParkPct.toFixed(0)}%`, c: '#94A3B8' },
-                            { l: 'Endgame Park', v: `${selectedTeam.endgameParkPct.toFixed(0)}%`, c: '#FFD166' },
-                            { l: 'Control Flor', v: `${selectedTeam.flowerControlPct.toFixed(0)}% · ${selectedTeam.flowersOwnedAvg.toFixed(1)} fl.`, c: '#FB7185' },
-                            { l: 'Bottom Nectar', v: `${selectedTeam.bottomNectarPct.toFixed(0)}%`, c: '#F87171' },
-                            { l: 'Descore Garden', v: `${selectedTeam.gardenDescorePct.toFixed(0)}%`, c: '#34D399' },
-                          ].map((m) => (
-                            <div
-                              key={m.l}
-                              style={{
-                                background: 'var(--bg-carbon)',
-                                border: '1px solid var(--border-steel)',
-                                borderRadius: '4px',
-                                padding: '10px',
-                              }}
-                            >
-                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>{m.l}</div>
-                              <div style={{ fontSize: '18px', fontWeight: 900, color: m.c }}>{m.v}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="panel">
-                        <div className="panel-header">
-                          <span className="panel-title">Notas de Scouters &amp; Alertas</span>
-                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                            {selectedTeam.notes.length} notas
-                          </span>
-                        </div>
-                        {selectedTeam.notes.length === 0 ? (
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sin observaciones ni fallas reportadas.</div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
-                            {selectedTeam.notes.map((n, idx) => (
-                              <div
-                                key={idx}
-                                style={{
-                                  background: 'var(--bg-carbon)',
-                                  border: '1px solid var(--border-steel)',
-                                  borderLeft: `3px solid ${n.status === '100% Operativo' ? 'var(--bey-indigo)' : 'var(--accent-amber)'}`,
-                                  borderRadius: '4px',
-                                  padding: '8px 10px',
-                                  fontSize: '12px',
-                                }}
-                              >
-                                <div className="tabular" style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                                  Match #{n.match} ({n.alliance}) • {n.scouter} • {n.status}
-                                </div>
-                                {n.note && <div style={{ color: 'var(--text-white)', marginTop: '3px' }}>{n.note}</div>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* SECCIÓN 2: GRÁFICAS & CANCHA */}
-                {profileSection === 'graficas' && (
-                  <div className="split-2col">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div className="panel">
-                        <div className="panel-header">
-                          <span className="panel-title">Perfil de Capacidades BIOBUZZ (Radar)</span>
-                          {compareTeam && (
-                            <span className="tabular" style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 800 }}>
-                              Comparando vs #{compareTeam.team}
-                            </span>
-                          )}
-                        </div>
-                        <TeamRadarChart team={selectedTeam} compareTeam={compareTeam} allTeams={teams} />
-                      </div>
-
-                      <div className="panel">
-                        <div className="panel-header">
-                          <span className="panel-title">Distribuciones de Piezas (Balancín vs Flor)</span>
-                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                            Prom. por match
-                          </span>
-                        </div>
-                        <DistributionBars
-                          autoBalPollen={selectedTeam.autoHivePollenAvg}
-                          autoBalNectar={selectedTeam.autoHiveNectarAvg}
-                          autoFlorPollen={selectedTeam.autoFlowerPollenAvg}
-                          autoFlorNectar={selectedTeam.autoFlowerNectarAvg}
-                          teleBalPollen={selectedTeam.teleHivePollenAvg}
-                          teleBalNectar={selectedTeam.teleHiveNectarAvg}
-                          teleFlorPollen={selectedTeam.teleFlowerPollenAvg}
-                          teleFlorNectar={selectedTeam.teleFlowerNectarAvg}
-                          gardenAvg={selectedTeam.gardenAvg}
-                        />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div className="panel">
-                        <div className="panel-header">
-                          <span className="panel-title">HISTORIC • Tendencia por Partido</span>
-                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--accent-amber)', fontWeight: 700 }}>
-                            Swarm Prom: {selectedTeam.swarmPtsAvg.toFixed(1)} pts
-                          </span>
-                        </div>
-                        <TeamHistoricChart history={selectedTeam.history} />
-                      </div>
-
-                      <div className="panel">
-                        <div className="panel-header">
-                          <span className="panel-title">POSITIONS • Zonas de Inicio (6×6 BIOBUZZ)</span>
-                          <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-silver)', fontWeight: 700 }}>
-                            Favorita: {selectedTeam.topStartPos}
-                          </span>
-                        </div>
-                        <RagnarokFieldHeatmap
-                          positions={selectedTeam.positions}
-                          sidePositions={selectedTeam.sidePositions}
-                          teamNumber={selectedTeam.team}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* SECCIÓN 3: BITÁCORA DE PARTIDOS */}
-                {profileSection === 'bitacora' && (
-                  <>
-                    <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-                      <div className="panel-header" style={{ padding: '14px 16px', marginBottom: 0 }}>
-                        <span className="panel-title">Bitácora de Partidos (#{selectedTeam.team})</span>
-                        <span className="tabular" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                          {selectedTeam.history.length} registros
-                        </span>
-                      </div>
-                      {selectedTeam.history.length === 0 ? (
-                        <div style={{ padding: '28px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
-                          Este equipo aún no tiene partidos capturados en Captura_BIOBUZZ.
-                        </div>
-                      ) : (
-                        <div className="table-wrap" style={{ border: 'none', borderRadius: 0 }}>
-                          <table className="rag-table">
-                            <thead>
-                              <tr>
-                                <th>Match</th>
-                                <th>Alianza</th>
-                                <th>Inicio</th>
-                                <th>Bal. Auto (P/N)</th>
-                                <th>Flor Auto (P/N)</th>
-                                <th>Bal. Tele (P/N)</th>
-                                <th>Flor Tele (P/N)</th>
-                                <th>Prop. Flor</th>
-                                <th>Garden</th>
-                                <th>Estatus</th>
-                                <th>Faltas</th>
-                                <th>Auto</th>
-                                <th>Tele</th>
-                                <th>Neto</th>
-                              </tr>
-                            </thead>
-                            <tbody className="tabular">
-                              {selectedTeam.history.map((m) => (
-                                <tr key={m.id} style={{ cursor: 'default' }}>
-                                  <td style={{ fontWeight: 900, color: '#FFFFFF' }}>M#{m.match}</td>
-                                  <td style={{ color: m.alliance === 'ROJO' ? 'var(--rag-coral)' : 'var(--accent-cyan)', fontWeight: 800 }}>
-                                    {m.alliance}
-                                  </td>
-                                  <td>{m.startPos}</td>
-                                  <td style={{ color: '#93C5FD' }}>{m.autoHivePollen} / {m.autoHiveNectar}</td>
-                                  <td style={{ color: '#FDA4AF' }}>{m.autoFlowerPollen} / {m.autoFlowerNectar}</td>
-                                  <td style={{ color: '#60A5FA', fontWeight: 800 }}>{m.teleopHivePollen} / {m.teleopHiveNectar}</td>
-                                  <td style={{ color: '#FB7185', fontWeight: 800 }}>{m.teleopFlowerPollen} / {m.teleopFlowerNectar}</td>
-                                  <td style={{ color: m.flowerOwnedCount > 0 ? '#FB7185' : 'var(--text-muted)', fontWeight: m.flowerOwnedCount > 0 ? 800 : 600 }}>
-                                    {m.flowerOwnedCount}
-                                  </td>
-                                  <td style={{ color: '#34D399', fontWeight: 800 }}>{m.gardenElements}</td>
-                                  <td style={{ color: m.status === '100% Operativo' ? 'var(--accent-emerald)' : 'var(--rag-coral)' }}>
-                                    {m.status}
-                                  </td>
-                                  <td>{m.foulsScore}</td>
-                                  <td style={{ color: 'var(--accent-cyan)' }}>{m.autoScore}</td>
-                                  <td style={{ color: 'var(--accent-amber)' }}>{m.teleScore}</td>
-                                  <td style={{ fontWeight: 900, color: 'var(--bey-purple)' }}>{m.netScore}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="panel">
-                      <div className="panel-header">
-                        <span className="panel-title">Notas de Scouters &amp; Alertas</span>
-                      </div>
-                      {selectedTeam.notes.length === 0 ? (
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sin observaciones ni fallas reportadas.</div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {selectedTeam.notes.map((n, idx) => (
-                            <div
-                              key={idx}
-                              style={{
-                                background: 'var(--bg-carbon)',
-                                border: '1px solid var(--border-steel)',
-                                borderLeft: `3px solid ${n.status === '100% Operativo' ? 'var(--bey-indigo)' : 'var(--accent-amber)'}`,
-                                borderRadius: '4px',
-                                padding: '8px 10px',
-                                fontSize: '12px',
-                              }}
-                            >
-                              <div className="tabular" style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700 }}>
-                                Match #{n.match} ({n.alliance}) • {n.scouter} • {n.status}
-                              </div>
-                              {n.note && <div style={{ color: 'var(--text-white)', marginTop: '3px' }}>{n.note}</div>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </>
+          <TeamProfileView
+            teams={teams}
+            selectedTeam={selectedTeam}
+            compareTeam={compareTeam}
+            classificationByTeam={classificationByTeam}
+            scoringProfile={scoringProfile}
+            pickTags={pickTags}
+            onSelectTeam={(teamNum) => {
+              setSelectedTeamNum(teamNum);
+              if (compareTeamNum === teamNum) setCompareTeamNum(0);
+            }}
+            onSelectCompareTeam={setCompareTeamNum}
+            onSetPickTag={setPickTag}
+            onChangeScoringProfile={setScoringProfile}
+            onFindPerfectMatch={(teamNum) => {
+              setAllyCap(teamNum);
+              setTab('perfect_match');
+            }}
+          />
         )}
 
         {/* ================= 3. HORARIO DE MATCHES EXPANDIBLE ================= */}
@@ -1847,7 +1247,9 @@ export default function RagnarokAnalyticsPage() {
             teams={teams}
             teamMap={teamMap}
             timestoneMatches={timestoneData?.matches || []}
+            timestoneTeams={timestoneData?.teams || []}
             scheduleMatches={scheduleMatches}
+            eventTeams={eventTeams}
             activeEventCode={activeEventCode}
             loadedEvent={loadedEvent}
             eventSeason={eventSeason}
@@ -2037,7 +1439,6 @@ export default function RagnarokAnalyticsPage() {
               <div className="kpi-card">
                 <span className="kpi-label">Equipos en Ranking</span>
                 <span className="kpi-value tabular">{timestoneData?.standings.length ?? 0}</span>
-                <span className="kpi-sub">Con simulación Monte Carlo</span>
               </div>
               <div className="kpi-card" style={{ borderTopColor: 'var(--accent-amber)' }}>
                 <span className="kpi-label">Líder Proyectado</span>
