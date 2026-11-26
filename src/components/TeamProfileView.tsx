@@ -123,7 +123,6 @@ export default function TeamProfileView({
   const roleMeta = detectRobotRole(selectedTeam);
   const cls = classificationByTeam.get(selectedTeam.team);
   const activeTag: PickTag = pickTags[selectedTeam.team] || 'none';
-  const firstPhoto = selectedTeam.pit?.photos?.[0] || null;
   const photoCount = selectedTeam.pit?.photos?.length ?? 0;
   const tsMetric = selectedTeam.timestone;
   const hasOpr = tsMetric?.opr !== null && tsMetric?.opr !== undefined;
@@ -275,52 +274,8 @@ export default function TeamProfileView({
         {/* Hero Card */}
         <div className="profile-hero">
           <div className="profile-hero-top">
-            {/* Identidad + Miniatura */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: '1 1 280px' }}>
-              {firstPhoto ? (
-                <button
-                  type="button"
-                  onClick={() => setSubTab('pit')}
-                  title="Ver galería de Pit"
-                  style={{
-                    width: '76px',
-                    height: '76px',
-                    borderRadius: '6px',
-                    overflow: 'hidden',
-                    border: '1px solid rgba(56, 189, 248, 0.45)',
-                    background: '#090A0F',
-                    padding: 0,
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                >
-                  <img
-                    src={`/api/pit/photo?id=${encodeURIComponent(firstPhoto.photoId)}`}
-                    alt={`Robot #${selectedTeam.team}`}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
-                </button>
-              ) : (
-                <div
-                  className="tabular"
-                  style={{
-                    width: '76px',
-                    height: '76px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-steel)',
-                    background: 'var(--bg-carbon)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <span style={{ fontSize: '16px', fontWeight: 900, color: '#FFFFFF' }}>#{selectedTeam.team}</span>
-                  <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontWeight: 700 }}>SIN FOTO</span>
-                </div>
-              )}
-
+            {/* Identidad */}
+            <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, flex: '1 1 280px' }}>
               <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span className="tabular" style={{ fontSize: '24px', fontWeight: 900, color: '#FFFFFF', lineHeight: 1.05 }}>

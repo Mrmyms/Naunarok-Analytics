@@ -102,18 +102,130 @@ def _poisson_nonneg(rng: np.random.Generator, lam: float) -> int:
     return int(rng.poisson(max(0.0, lam))) if lam > 0 else 0
 
 
+def load_real_event_archetypes(event_code: str, season: int = 2026) -> List[Dict[str, Any]]:
+    """Mapea los 24 arquetipos estadísticos a equipos reales del evento en FTCScout."""
+    try:
+        ftc_data = ts.fetch_ftcscout_event(event_code, season=season)
+        ftc_teams = ts._parse_ftcscout_teams(ftc_data) if ftc_data else pd.DataFrame()
+    except Exception:
+        ftc_teams = pd.DataFrame()
+
+    if ftc_teams.empty:
+        return [dict(a) for a in TEAM_ARCHETYPES]
+
+    ordered: List[Tuple[int, str]] = []
+    seen = set()
+    # Priorizar 21735 (Nautilus en MXTLQ) o 4010 como primer equipo si participa
+    for priority_id in (21735, 4010):
+        match = ftc_teams[ftc_teams["Team ID"] == priority_id]
+        if not match.empty:
+            r = match.iloc[0]
+            tid = int(r["Team ID"])
+            seen.add(tid)
+            ordered.append((tid, str(r["Names"])))
+
+    for _, r in ftc_teams.iterrows():
+        tid = int(r["Team ID"])
+        if tid in seen:
+            continue
+        seen.add(tid)
+        ordered.append((tid, str(r["Names"])))
+        if len(ordered) >= len(TEAM_ARCHETYPES):
+            break
+
+    if len(ordered) < len(TEAM_ARCHETYPES):
+        return [dict(a) for a in TEAM_ARCHETYPES]
+
+    mapped: List[Dict[str, Any]] = []
+    for idx, base in enumerate(TEAM_ARCHETYPES):
+        tid, name = ordered[idx]
+        item = dict(base)
+        item["id"] = tid
+        item["name"] = name
+        mapped.append(item)
+    return mapped
+
+
+def build_pit_dataframe(archetypes: List[Dict[str, Any]], count: int = 12) -> pd.DataFrame:
+    """Genera fichas técnicas realistas para ``Pit_BIOBUZZ`` (19 columnas exactas)."""
+    chassis_opts = ["Mecanum goBILDA", "Swerve 4-Pod", "Mecanum REV", "Tank / Traction"]
+    intake_opts = ["Roller Rodillo + Rampa", "Garra Activa Dual", "Sweeper Compliant", "Intake Lateral"]
+    cap_opts = ["1 pieza", "2 piezas", "2 piezas + clasificador"]
+    hive_mechs = ["Elevador Telescópico", "Brazo Doble Articulado", "Elevador Cascada 2 Etapas", "No alcanza Hive"]
+    flor_mechs = ["Brazo Superior + Néctar", "Torreta Flor Rápida", "Dispensador Frontal", "Solo Garden"]
+    auto_routines = [
+        "Leave + 2 Hive + Park",
+        "Leave + 1 Hive + 1 Flor",
+        "Leave + 2 Flores",
+        "Leave + Park Seguro",
+    ]
+    auto_sides = ["Ambos lados", "Lado Hive (A/E)", "Lado Flor (B/C)", "Indiferente"]
+    vision_opts = [
+        "Limelight 3A + Odometría",
+        "Webcam AprilTags + Encoders",
+        "Limelight 3A + Sensor Color",
+        "Solo Encoders / IMU",
+    ]
+    hours_opts = ["40+ hrs", "25-40 hrs", "15-25 hrs", "< 15 hrs"]
+
+    rows: List[Dict[str, Any]] = []
+    now_str = datetime.now().strftime("%d/%m/%Y, %H:%M:%S")
+    for idx, p in enumerate(archetypes[:count]):
+        bal_focus = (p["ah_p"] + p["ah_n"] + p["th_p"] + p["th_n"]) >= (p["af_p"] + p["af_n"] + p["tf_p"] + p["tf_n"])
+        if p["gar"] >= 4.0:
+            pref_role = "Garden / Defensa"
+        elif idx < 4:
+            pref_role = "Híbrido"
+        elif bal_focus:
+            pref_role = "Balancín (Hive)"
+        else:
+            pref_role = "Flor (Polen/Néctar)"
+
+        claimed_auto = round(
+            3 * p["leave"] + 5 * p["apark"] + 2 * (p["ah_p"] + p["ah_n"] + p["af_p"] + p["af_n"])
+        )
+        rows.append({
+            "Timestamp": now_str,
+            "EQUIPO": p["id"],
+            "NOMBRE_EQUIPO": p["name"],
+            "SCOUT": SCOUTERS[idx % len(SCOUTERS)],
+            "CHASIS": chassis_opts[idx % len(chassis_opts)],
+            "PESO_LB": round(29.5 + (idx % 7) * 1.6, 1),
+            "INTAKE": intake_opts[idx % len(intake_opts)],
+            "CAPACIDAD": cap_opts[min(2, idx % len(cap_opts))],
+            "MECANISMO_HIVE": hive_mechs[3 if p["th_p"] + p["th_n"] < 1.0 else idx % 3],
+            "MECANISMO_FLOR": flor_mechs[3 if p["tf_p"] + p["tf_n"] < 1.0 else idx % 3],
+            "RUTINAS_AUTO": auto_routines[min(3, idx // 3)],
+            "LADO_AUTO": auto_sides[idx % len(auto_sides)],
+            "SENSORES_VISION": vision_opts[min(3, idx // 3)],
+            "AUTO_PTS_EST": claimed_auto,
+            "HORAS_DRIVER": hours_opts[min(3, idx // 3)],
+            "ROL_PREFERIDO": pref_role,
+            "NOTAS": p["tag"],
+            "FOTOS_COUNT": 0,
+            "FOTOS_IDS": "",
+        })
+    return pd.DataFrame(rows)
+
+
 def generate_tournament_data(
     played_matches: int = 30,
     total_rounds: int = 6,
     seed: int = 2026,
+    archetypes: List[Dict[str, Any]] | None = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Construye ``captura_df``, ``teams_df`` y ``matches_df`` realistas para un torneo."""
     rng = np.random.default_rng(seed)
-    profiles = {t["id"]: t for t in TEAM_ARCHETYPES}
-    team_ids = [t["id"] for t in TEAM_ARCHETYPES]
+    source_archetypes = archetypes or TEAM_ARCHETYPES
+    profiles = {t["id"]: t for t in source_archetypes}
+    team_ids = [t["id"] for t in source_archetypes]
 
-    teams_df = pd.DataFrame([{"Team ID": t["id"], "Names": t["name"]} for t in TEAM_ARCHETYPES])
+    teams_df = pd.DataFrame([{"Team ID": t["id"], "Names": t["name"]} for t in source_archetypes])
     matches_df = build_balanced_schedule(team_ids, n_rounds=total_rounds, rng=rng)
+    matches_df["tournament_level"] = "Quals"
+    matches_df["has_been_played"] = matches_df["match_code"] <= played_matches
+    for col in ("actual_red_score", "actual_blue_score", "actual_red_np", "actual_blue_np", "actual_red_rp", "actual_blue_rp"):
+        matches_df[col] = np.nan
 
     played_df = matches_df[matches_df["match_code"] <= played_matches]
     team_appearance_count: Dict[int, int] = {tid: 0 for tid in team_ids}
@@ -139,6 +251,10 @@ def generate_tournament_data(
 
         # Evitar duplicar exactamente la misma posición entre compañeros en la mayoría de matches
         used_pos_by_alliance: Dict[str, str] = {}
+        alliance_stats: Dict[str, Dict[str, float]] = {
+            "ROJO": {"auto_tele": 0.0, "fouls_committed": 0.0, "swarm_pts": 0.0, "hive_g": 0.0},
+            "AZUL": {"auto_tele": 0.0, "fouls_committed": 0.0, "swarm_pts": 0.0, "hive_g": 0.0},
+        }
 
         for alianza, tid, scouter_offset in slots:
             p = profiles[tid]
@@ -226,6 +342,13 @@ def generate_tournament_data(
             fouls_pts = f_min * 5 + f_maj * 20
             net_pts = max(0, auto_pts + tele_pts - fouls_pts)
 
+            swarm_robot = (3 if auto_leave else 0) + (5 if auto_park else 0) + (5 if end_park else 0)
+            hive_g_robot = (ah_p + th_p) * 55 + (ah_n + th_n) * 90
+            alliance_stats[alianza]["auto_tele"] += auto_pts + tele_pts
+            alliance_stats[alianza]["fouls_committed"] += fouls_pts
+            alliance_stats[alianza]["swarm_pts"] += swarm_robot
+            alliance_stats[alianza]["hive_g"] += hive_g_robot
+
             captura_rows.append({
                 "Timestamp": ts_str,
                 "MATCH": m_num,
@@ -259,6 +382,25 @@ def generate_tournament_data(
                 "Faltas Pts": fouls_pts,
                 "Puntos Netos": net_pts,
             })
+
+        red_np = int(round(alliance_stats["ROJO"]["auto_tele"]))
+        blue_np = int(round(alliance_stats["AZUL"]["auto_tele"]))
+        red_tot = red_np + int(round(alliance_stats["AZUL"]["fouls_committed"]))
+        blue_tot = blue_np + int(round(alliance_stats["ROJO"]["fouls_committed"]))
+        red_tips = alliance_stats["ROJO"]["hive_g"] / 455.0
+        blue_tips = alliance_stats["AZUL"]["hive_g"] / 455.0
+        red_win_rp = 3 if red_tot > blue_tot else (1 if red_tot == blue_tot else 0)
+        blue_win_rp = 3 if blue_tot > red_tot else (1 if red_tot == blue_tot else 0)
+        red_rp = red_win_rp + (1 if alliance_stats["ROJO"]["swarm_pts"] >= 16 else 0) + (1 if red_tips >= 4 else 0) + (1 if red_tips >= 7 else 0)
+        blue_rp = blue_win_rp + (1 if alliance_stats["AZUL"]["swarm_pts"] >= 16 else 0) + (1 if blue_tips >= 4 else 0) + (1 if blue_tips >= 7 else 0)
+
+        m_idx = matches_df.index[matches_df["match_code"] == m_num]
+        matches_df.loc[m_idx, "actual_red_np"] = red_np
+        matches_df.loc[m_idx, "actual_blue_np"] = blue_np
+        matches_df.loc[m_idx, "actual_red_score"] = red_tot
+        matches_df.loc[m_idx, "actual_blue_score"] = blue_tot
+        matches_df.loc[m_idx, "actual_red_rp"] = red_rp
+        matches_df.loc[m_idx, "actual_blue_rp"] = blue_rp
 
     captura_df = pd.DataFrame(captura_rows)
     return captura_df, teams_df, matches_df
@@ -314,8 +456,15 @@ def main(argv: List[str] | None = None) -> None:
         ss = ts.open_spreadsheet(gc, sheet_id=ts.SHEET_ID, sheet_name=ts.SHEET_NAME)
         for tab in (
             "Captura_BIOBUZZ",
+            "Pit_BIOBUZZ",
+            "Pit_Fotos",
+        ):
+            _clear_tab_keep_header(ss, tab)
+        existing_titles = {ws.title for ws in ss.worksheets()}
+        for tab in (
             "Equipos",
             "Matches",
+            f"Matches_{args.event}",
             f"Ranking_EPA_{args.event}",
             f"Equipos_Simulados_{args.event}",
             f"Simulacion_Matches_{args.event}",
@@ -323,17 +472,25 @@ def main(argv: List[str] | None = None) -> None:
             f"Azul_Alianza_{args.event}",
             f"Standings_Proy_{args.event}",
         ):
-            _clear_tab_keep_header(ss, tab)
+            if tab in existing_titles:
+                try:
+                    ss.del_worksheet(ss.worksheet(tab))
+                    print(f"[DEL] '{tab}' eliminada.")
+                except Exception as exc:
+                    print(f"[SKIP] No se eliminó '{tab}': {exc}")
         return
 
+    archetypes = load_real_event_archetypes(args.event, season=2026)
     captura_df, teams_df, matches_df = generate_tournament_data(
         played_matches=args.played,
         total_rounds=args.rounds,
         seed=args.seed,
+        archetypes=archetypes,
     )
+    pit_df = build_pit_dataframe(archetypes, count=12)
     print(
-        f"[GEN] Equipos: {len(teams_df)} | Matches totales: {len(matches_df)} | "
-        f"Registros Captura_BIOBUZZ: {len(captura_df)}"
+        f"[GEN] Evento {args.event} | Equipos: {len(teams_df)} | Matches totales: {len(matches_df)} | "
+        f"Captura_BIOBUZZ: {len(captura_df)} | Pit_BIOBUZZ: {len(pit_df)}"
     )
 
     if args.dry_run or not args.upload:
@@ -343,18 +500,18 @@ def main(argv: List[str] | None = None) -> None:
             args.event, norm_df, teams_df, matches_df, n_sims=1000, seed=args.seed
         )
         print("\n=== TOP 8 RANKING EPA (SIMULACIÓN LOCAL) ===")
-        print(ranking_df.head(8)[["Rank_EPA", "Team ID", "Nombre", "Matches", "EPA", "EPA_Operativo", "Confiabilidad %", "Fallas_Excluidas"]].to_string(index=False))
+        print(ranking_df.head(8)[["Rank_EPA", "Team ID", "Nombre", "Matches", "EPA", "EPA_Operativo", "OPR", "DPR", "CCWM", "Confiabilidad %"]].to_string(index=False))
         print("\n=== TOP 8 STANDINGS PROYECTADOS ===")
-        print(standings_df.head(8)[["Rank_Proyectado", "Team ID", "Nombre", "PJ_Sim", "RP_Promedio", "Score_Promedio", "Rank_Min", "Rank_Max", "Prob_Top4_Pct"]].to_string(index=False))
+        print(standings_df.head(8)[["Rank_Proyectado", "Team ID", "Nombre", "PJ_Jugados", "PJ_Restantes", "RP_Promedio", "Score_Promedio", "Prob_Top4_Pct"]].to_string(index=False))
         print("\n=== ÚLTIMOS 6 MATCHES PENDIENTES (#31-#36) ===")
         print(sim_matches_df.tail(6)[["Match", "RED1", "RED2", "BLUE1", "BLUE2", "Red Est", "Blue Est", "Red Win %", "Blue Win %", "Red RPs Est", "Blue RPs Est"]].to_string(index=False))
         return
 
     gc = ts.authenticate_gspread()
     ss = ts.open_spreadsheet(gc, sheet_id=ts.SHEET_ID, sheet_name=ts.SHEET_NAME)
-    _write_tab_preserving_headers(ss, "Equipos", teams_df)
-    _write_tab_preserving_headers(ss, "Matches", matches_df)
     _write_tab_preserving_headers(ss, "Captura_BIOBUZZ", captura_df)
+    _write_tab_preserving_headers(ss, "Pit_BIOBUZZ", pit_df)
+    _write_tab_preserving_headers(ss, f"Matches_{args.event}", matches_df)
 
     if args.run_timestone:
         ts.run_pipeline(
@@ -362,7 +519,7 @@ def main(argv: List[str] | None = None) -> None:
             sheet_id=ts.SHEET_ID,
             sheet_name=ts.SHEET_NAME,
             upload=True,
-            use_ftcscout=False,
+            use_ftcscout=True,
         )
 
 

@@ -793,6 +793,10 @@ def _ensure_match_defaults(matches_df: pd.DataFrame) -> pd.DataFrame:
         df["tournament_level"] = "Quals"
     if "has_been_played" not in df.columns:
         df["has_been_played"] = False
+    else:
+        df["has_been_played"] = df["has_been_played"].apply(
+            lambda v: v if isinstance(v, bool) else str(v).strip().upper() in TRUE_VALUES
+        )
 
     for slot in ("RED1", "RED2", "BLUE1", "BLUE2"):
         df[slot] = df[slot].apply(lambda v: int(to_numeric_safe(v, 0))) if slot in df.columns else 0
@@ -809,6 +813,8 @@ def _ensure_match_defaults(matches_df: pd.DataFrame) -> pd.DataFrame:
     ):
         if metric not in df.columns:
             df[metric] = np.nan
+        else:
+            df[metric] = pd.to_numeric(df[metric], errors="coerce")
 
     return df
 
