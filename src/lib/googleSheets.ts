@@ -5,6 +5,62 @@ import path from 'path';
 let cachedCreds: { client_email: string; private_key: string } | null = null;
 const sheetId = process.env.GOOGLE_SHEET_ID || '1e6LXPnQFsIYImBLn3JrOv7h2Bo1il3hIHWJLRFJbWTQ';
 
+const EVENT_TAB_PREFIXES = [
+  'Captura_BIOBUZZ_',
+  'Pit_BIOBUZZ_',
+  'Ranking_EPA_',
+  'Simulacion_Matches_',
+  'Standings_Proy_',
+];
+
+const RESERVED_DEFAULT_CODES = new Set(['', 'DEFAULT', 'GENERAL', 'MANUAL', 'ALL']);
+
+export function formatSheetRange(sheetName: string, range: string): string {
+  const escaped = sheetName.replace(/'/g, "''");
+  return `'${escaped}'!${range}`;
+}
+
+export function normalizeEventCode(raw?: string | null): string {
+  if (!raw) return '';
+  const cleaned = raw
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+
+  if (!cleaned || RESERVED_DEFAULT_CODES.has(cleaned)) {
+    return '';
+  }
+
+  return cleaned;
+}
+
+export function extractAllAvailableEvents(titles: string[]): string[] {
+  const events = new Set<string>();
+  for (const title of titles) {
+    for (const prefix of EVENT_TAB_PREFIXES) {
+      if (title.startsWith(prefix)) {
+        const code = normalizeEventCode(title.slice(prefix.length));
+        if (code) events.add(code);
+      }
+    }
+  }
+  return Array.from(events).sort();
+}
+
+export function resolveEventCode(requestedEvent?: string, availableEvents?: string[]): string {
+  const requested = normalizeEventCode(requestedEvent);
+  if (requested) return requested;
+
+  const envEvent = normalizeEventCode(process.env.TIMESTONE_EVENT || 'MXTLQ');
+  if (envEvent) return envEvent;
+
+  return availableEvents?.[0] || 'MXTLQ';
+}
+
 function getCredentials() {
   if (cachedCreds) return cachedCreds;
 
@@ -39,65 +95,115 @@ function getCredentials() {
   throw new Error('Faltan credenciales GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY en variables de entorno.');
 }
 
-export async function fetchAnalyticsSheets() {
+function getSheetsReadonlyClient() {
   const creds = getCredentials();
   const auth = new google.auth.GoogleAuth({
     credentials: creds,
     scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
   });
-  const sheets = google.sheets({ version: 'v4', auth });
+  return google.sheets({ version: 'v4', auth });
+}
+
+export async function listSpreadsheetTitles(): Promise<string[]> {
+  const sheets = getSheetsReadonlyClient();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: 'sheets.properties.title',
+  });
+  return (meta.data.sheets || [])
+    .map((s) => s.properties?.title || '')
+    .filter(Boolean);
+}
+
+export async function fetchAnalyticsSheets(
+  eventCode?: string,
+  preloadedTitles?: string[]
+): Promise<{
+  resumenRows: unknown[][];
+  capturaRows: unknown[][];
+  capturaSheet: string;
+}> {
+  const sheets = getSheetsReadonlyClient();
+  const titles = preloadedTitles ?? (await listSpreadsheetTitles());
+  const normalizedEvent = normalizeEventCode(eventCode);
+
+  if (normalizedEvent) {
+    const candidates = [
+      `Captura_BIOBUZZ_${normalizedEvent}`,
+      `Captura_${normalizedEvent}`,
+      `Scouting_${normalizedEvent}`,
+    ];
+    const capturaSheet = candidates.find((t) => titles.includes(t)) || '';
+    if (!capturaSheet) {
+      return {
+        resumenRows: [],
+        capturaRows: [],
+        capturaSheet: '',
+      };
+    }
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: formatSheetRange(capturaSheet, 'A1:AE'),
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+
+    return {
+      resumenRows: [],
+      capturaRows: res.data.values || [],
+      capturaSheet,
+    };
+  }
+
+  const ranges: { key: 'resumen' | 'captura'; range: string }[] = [];
+  if (titles.includes('Resumen_Equipos')) {
+    ranges.push({ key: 'resumen', range: formatSheetRange('Resumen_Equipos', 'A3:N100') });
+  }
+  if (titles.includes('Captura_BIOBUZZ')) {
+    ranges.push({ key: 'captura', range: formatSheetRange('Captura_BIOBUZZ', 'A1:AE') });
+  }
+
+  if (ranges.length === 0) {
+    return { resumenRows: [], capturaRows: [], capturaSheet: '' };
+  }
 
   const response = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: sheetId,
-    ranges: ['Resumen_Equipos!A3:N100', 'Captura_BIOBUZZ!A1:AE1000'],
+    ranges: ranges.map((r) => r.range),
     valueRenderOption: 'UNFORMATTED_VALUE',
   });
 
   const valueRanges = response.data.valueRanges || [];
+  let resumenRows: unknown[][] = [];
+  let capturaRows: unknown[][] = [];
+
+  ranges.forEach((item, idx) => {
+    const values = valueRanges[idx]?.values || [];
+    if (item.key === 'resumen') resumenRows = values;
+    if (item.key === 'captura') capturaRows = values;
+  });
+
   return {
-    resumenRows: valueRanges[0]?.values || [],
-    capturaRows: valueRanges[1]?.values || [],
+    resumenRows,
+    capturaRows,
+    capturaSheet: titles.includes('Captura_BIOBUZZ') ? 'Captura_BIOBUZZ' : '',
   };
 }
 
-export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
+export async function fetchTimestoneSheets(
+  requestedEvent?: string,
+  preloadedTitles?: string[]
+): Promise<{
   eventCode: string;
   availableEvents: string[];
   rankingRows: unknown[][];
   simMatchRows: unknown[][];
   standingsRows: unknown[][];
 }> {
-  const creds = getCredentials();
-  const auth = new google.auth.GoogleAuth({
-    credentials: creds,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId: sheetId,
-    fields: 'sheets.properties.title',
-  });
-  const titles = (meta.data.sheets || [])
-    .map((s) => s.properties?.title || '')
-    .filter(Boolean);
-
-  const tabPrefixes = ['Ranking_EPA_', 'Simulacion_Matches_', 'Standings_Proy_'];
-  const availableEvents = Array.from(
-    new Set(
-      titles.flatMap((t) => {
-        const prefix = tabPrefixes.find((p) => t.startsWith(p));
-        return prefix ? [t.slice(prefix.length)] : [];
-      })
-    )
-  )
-    .filter(Boolean)
-    .sort();
-
-  const requestedClean = (requestedEvent || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-  const envEvent = (process.env.TIMESTONE_EVENT || 'MXTLQ').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
-
-  const resolvedEvent = requestedClean || envEvent || availableEvents[0] || 'MXTLQ';
+  const sheets = getSheetsReadonlyClient();
+  const titles = preloadedTitles ?? (await listSpreadsheetTitles());
+  const availableEvents = extractAllAvailableEvents(titles);
+  const resolvedEvent = resolveEventCode(requestedEvent, availableEvents);
 
   if (!resolvedEvent) {
     return {
@@ -114,9 +220,15 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
   const standingsTab = `Standings_Proy_${resolvedEvent}`;
 
   const rangesToFetch: { key: 'ranking' | 'matches' | 'standings'; range: string }[] = [];
-  if (titles.includes(rankingTab)) rangesToFetch.push({ key: 'ranking', range: `${rankingTab}!A1:AZ200` });
-  if (titles.includes(matchesTab)) rangesToFetch.push({ key: 'matches', range: `${matchesTab}!A1:AZ300` });
-  if (titles.includes(standingsTab)) rangesToFetch.push({ key: 'standings', range: `${standingsTab}!A1:AZ200` });
+  if (titles.includes(rankingTab)) {
+    rangesToFetch.push({ key: 'ranking', range: formatSheetRange(rankingTab, 'A1:AZ200') });
+  }
+  if (titles.includes(matchesTab)) {
+    rangesToFetch.push({ key: 'matches', range: formatSheetRange(matchesTab, 'A1:AZ300') });
+  }
+  if (titles.includes(standingsTab)) {
+    rangesToFetch.push({ key: 'standings', range: formatSheetRange(standingsTab, 'A1:AZ200') });
+  }
 
   if (rangesToFetch.length === 0) {
     return {
@@ -155,35 +267,31 @@ export async function fetchTimestoneSheets(requestedEvent?: string): Promise<{
   };
 }
 
-export async function fetchPitScoutingData(): Promise<{
+export async function fetchPitScoutingData(
+  eventCode?: string,
+  preloadedTitles?: string[]
+): Promise<{
   pitRows: unknown[][];
   photoMetaRows: unknown[][];
+  pitEventCode: string;
 }> {
-  const creds = getCredentials();
-  const auth = new google.auth.GoogleAuth({
-    credentials: creds,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
-  const sheets = google.sheets({ version: 'v4', auth });
+  const sheets = getSheetsReadonlyClient();
+  const titles = preloadedTitles ?? (await listSpreadsheetTitles());
+  const normalizedEvent = normalizeEventCode(eventCode);
 
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId: sheetId,
-    fields: 'sheets.properties.title',
-  });
-  const titles = (meta.data.sheets || [])
-    .map((s) => s.properties?.title || '')
-    .filter(Boolean);
+  const pitTab = normalizedEvent ? `Pit_BIOBUZZ_${normalizedEvent}` : 'Pit_BIOBUZZ';
+  const photosTab = normalizedEvent ? `Pit_Fotos_${normalizedEvent}` : 'Pit_Fotos';
 
   const ranges: { key: 'pit' | 'photos'; range: string }[] = [];
-  if (titles.includes('Pit_BIOBUZZ')) {
-    ranges.push({ key: 'pit', range: 'Pit_BIOBUZZ!A1:S1000' });
+  if (titles.includes(pitTab)) {
+    ranges.push({ key: 'pit', range: formatSheetRange(pitTab, 'A1:S') });
   }
-  if (titles.includes('Pit_Fotos')) {
-    ranges.push({ key: 'photos', range: 'Pit_Fotos!A2:I50000' });
+  if (titles.includes(photosTab)) {
+    ranges.push({ key: 'photos', range: formatSheetRange(photosTab, 'A2:I') });
   }
 
   if (ranges.length === 0) {
-    return { pitRows: [], photoMetaRows: [] };
+    return { pitRows: [], photoMetaRows: [], pitEventCode: normalizedEvent };
   }
 
   const batchRes = await sheets.spreadsheets.values.batchGet({
@@ -202,7 +310,7 @@ export async function fetchPitScoutingData(): Promise<{
     if (item.key === 'photos') photoMetaRows = values;
   });
 
-  return { pitRows, photoMetaRows };
+  return { pitRows, photoMetaRows, pitEventCode: normalizedEvent };
 }
 
 type PhotoChunkMatch = {
@@ -215,48 +323,65 @@ type PhotoChunkMatch = {
 };
 
 export async function fetchPitPhotoById(
-  photoId: string
+  photoId: string,
+  eventCode?: string
 ): Promise<{ buffer: Buffer; mimeType: string; fileName: string } | null> {
   const cleanId = photoId.trim();
   if (!cleanId) return null;
 
-  const creds = getCredentials();
-  const auth = new google.auth.GoogleAuth({
-    credentials: creds,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
-  const sheets = google.sheets({ version: 'v4', auth });
+  const sheets = getSheetsReadonlyClient();
+  const titles = await listSpreadsheetTitles();
+  const normalizedEvent = normalizeEventCode(eventCode);
 
-  let metaRows: unknown[][];
-  try {
-    const metaRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetId,
-      range: 'Pit_Fotos!A2:I50000',
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-    metaRows = metaRes.data.values || [];
-  } catch (err: any) {
-    const msg = String(err?.message || '');
-    if (msg.includes('Unable to parse range')) {
-      return null;
+  const candidateSheets: string[] = [];
+  const addCandidate = (sheetTitle: string) => {
+    if (titles.includes(sheetTitle) && !candidateSheets.includes(sheetTitle)) {
+      candidateSheets.push(sheetTitle);
     }
-    throw err;
+  };
+
+  if (normalizedEvent) {
+    addCandidate(`Pit_Fotos_${normalizedEvent}`);
+  }
+  addCandidate('Pit_Fotos');
+  for (const title of titles) {
+    if (title.startsWith('Pit_Fotos_')) {
+      addCandidate(title);
+    }
   }
 
-  const matches: PhotoChunkMatch[] = [];
-  metaRows.forEach((row, idx) => {
-    if (String(row[1] ?? '').trim() === cleanId) {
-      matches.push({
-        rowNum: idx + 2,
-        part: Number(row[6]) || 0,
-        totalParts: Number(row[7]) || 1,
-        mimeType: String(row[4] || 'application/octet-stream'),
-        fileName: String(row[3] || 'photo'),
-      });
-    }
-  });
+  let foundSheet: string | null = null;
+  let matches: PhotoChunkMatch[] = [];
 
-  if (matches.length === 0) return null;
+  for (const sheetTitle of candidateSheets) {
+    const metaRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: formatSheetRange(sheetTitle, 'A2:I'),
+      valueRenderOption: 'UNFORMATTED_VALUE',
+    });
+    const metaRows = metaRes.data.values || [];
+    const sheetMatches: PhotoChunkMatch[] = [];
+
+    metaRows.forEach((row, idx) => {
+      if (String(row[1] ?? '').trim() === cleanId) {
+        sheetMatches.push({
+          rowNum: idx + 2,
+          part: Number(row[6]) || 0,
+          totalParts: Number(row[7]) || 1,
+          mimeType: String(row[4] || 'application/octet-stream'),
+          fileName: String(row[3] || 'photo'),
+        });
+      }
+    });
+
+    if (sheetMatches.length > 0) {
+      foundSheet = sheetTitle;
+      matches = sheetMatches;
+      break;
+    }
+  }
+
+  if (!foundSheet || matches.length === 0) return null;
 
   matches.sort((a, b) => a.rowNum - b.rowNum);
 
@@ -273,7 +398,7 @@ export async function fetchPitPhotoById(
 
   const chunkRes = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: sheetId,
-    ranges: runs.map((r) => `Pit_Fotos!J${r.startRow}:J${r.endRow}`),
+    ranges: runs.map((r) => formatSheetRange(foundSheet!, `J${r.startRow}:J${r.endRow}`)),
     valueRenderOption: 'UNFORMATTED_VALUE',
   });
 

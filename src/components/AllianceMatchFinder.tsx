@@ -290,7 +290,9 @@ export default function AllianceMatchFinder({
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               {captainPhoto && (
                 <img
-                  src={`/api/pit/photo?id=${encodeURIComponent(captainPhoto.photoId)}`}
+                  src={`/api/pit/photo?id=${encodeURIComponent(captainPhoto.photoId)}${
+                    captainPhoto.eventCode ? `&event=${encodeURIComponent(captainPhoto.eventCode)}` : ''
+                  }`}
                   alt={`#${captain.team}`}
                   style={{
                     width: '36px',
@@ -467,7 +469,9 @@ export default function AllianceMatchFinder({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {captainPhoto && (
                     <img
-                      src={`/api/pit/photo?id=${encodeURIComponent(captainPhoto.photoId)}`}
+                      src={`/api/pit/photo?id=${encodeURIComponent(captainPhoto.photoId)}${
+                        captainPhoto.eventCode ? `&event=${encodeURIComponent(captainPhoto.eventCode)}` : ''
+                      }`}
                       alt={`#${captain.team}`}
                       title={`#${captain.team}`}
                       style={{
@@ -481,7 +485,9 @@ export default function AllianceMatchFinder({
                   )}
                   {spotlightPhoto && (
                     <img
-                      src={`/api/pit/photo?id=${encodeURIComponent(spotlightPhoto.photoId)}`}
+                      src={`/api/pit/photo?id=${encodeURIComponent(spotlightPhoto.photoId)}${
+                        spotlightPhoto.eventCode ? `&event=${encodeURIComponent(spotlightPhoto.eventCode)}` : ''
+                      }`}
                       alt={`#${spotlight.team.team}`}
                       title={`#${spotlight.team.team}`}
                       style={{
@@ -784,7 +790,9 @@ export default function AllianceMatchFinder({
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center', minWidth: 0 }}>
                       {thumb && (
                         <img
-                          src={`/api/pit/photo?id=${encodeURIComponent(thumb.photoId)}`}
+                          src={`/api/pit/photo?id=${encodeURIComponent(thumb.photoId)}${
+                            thumb.eventCode ? `&event=${encodeURIComponent(thumb.eventCode)}` : ''
+                          }`}
                           alt={`#${rec.team.team}`}
                           loading="lazy"
                           style={{

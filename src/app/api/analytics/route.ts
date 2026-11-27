@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import {
+  extractAllAvailableEvents,
   fetchAnalyticsSheets,
   fetchPitScoutingData,
   fetchTimestoneSheets,
+  listSpreadsheetTitles,
+  resolveEventCode,
 } from '@/lib/googleSheets';
 import { computeOprDprFromMatches } from '@/lib/opr';
 import type {
@@ -293,23 +296,27 @@ function parseTimestonePayload(raw: {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const requestedEvent = searchParams.get('event')?.trim().toUpperCase() || undefined;
+    const requestedEvent = searchParams.get('event')?.trim() || undefined;
 
-    const [{ resumenRows, capturaRows }, rawTimestone, rawPit] = await Promise.all([
-      fetchAnalyticsSheets(),
-      fetchTimestoneSheets(requestedEvent).catch((err) => {
+    const titles = await listSpreadsheetTitles();
+    const availableEvents = extractAllAvailableEvents(titles);
+    const resolvedEvent = resolveEventCode(requestedEvent, availableEvents);
+
+    const [{ resumenRows, capturaRows, capturaSheet }, rawTimestone, rawPit] = await Promise.all([
+      fetchAnalyticsSheets(resolvedEvent, titles),
+      fetchTimestoneSheets(resolvedEvent, titles).catch((err) => {
         console.warn('No se pudieron cargar pestañas de Timestone:', err);
         return {
-          eventCode: requestedEvent || '',
-          availableEvents: [],
+          eventCode: resolvedEvent,
+          availableEvents,
           rankingRows: [],
           simMatchRows: [],
           standingsRows: [],
         };
       }),
-      fetchPitScoutingData().catch((err) => {
+      fetchPitScoutingData(resolvedEvent, titles).catch((err) => {
         console.warn('No se pudieron cargar pestañas de Pit Scouting:', err);
-        return { pitRows: [], photoMetaRows: [] };
+        return { pitRows: [], photoMetaRows: [], pitEventCode: resolvedEvent };
       }),
     ]);
 
@@ -327,6 +334,7 @@ export async function GET(request: Request) {
       const teamNum = toNum(r[2], 0);
       const meta: PitPhotoMeta = {
         photoId,
+        eventCode: rawPit.pitEventCode || resolvedEvent,
         fileName: String(r[3] ?? 'photo'),
         mimeType: String(r[4] ?? 'application/octet-stream'),
         caption: String(r[5] ?? 'Vista General'),
@@ -370,6 +378,7 @@ export async function GET(request: Request) {
       for (const pid of rowPhotoIds) {
         const meta = photoMetaById.get(pid) || {
           photoId: pid,
+          eventCode: rawPit.pitEventCode || resolvedEvent,
           fileName: 'photo',
           mimeType: 'image/jpeg',
           caption: 'Vista General',
@@ -635,6 +644,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
+      eventCode: resolvedEvent,
+      scoutingSheet: capturaSheet,
       updatedAt: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       matchesCount: matches.length,
       teamsCount: teams.length,

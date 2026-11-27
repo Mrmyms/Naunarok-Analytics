@@ -485,3 +485,45 @@ class TestScheduleEdgeCases:
         )
         assert list(teams_df["Team ID"]) == [450, 641]
         assert matches_df.empty
+
+    def test_load_event_data_prefers_captura_biobuzz_per_event_sheet(self):
+        class FakeWorksheet:
+            def __init__(self, title, records):
+                self.title = title
+                self._records = records
+
+            def get_all_records(self):
+                return self._records
+
+        class FakeSpreadsheet:
+            def __init__(self):
+                self._sheets = {
+                    "Captura_BIOBUZZ": FakeWorksheet("Captura_BIOBUZZ", [
+                        {"MATCH": 1, "EQUIPO": 9999, "ALIANZA": "ROJO", "POSICIÓN INICIAL": "A"}
+                    ]),
+                    "Captura_BIOBUZZ_TEST_A": FakeWorksheet("Captura_BIOBUZZ_TEST_A", [
+                        {"MATCH": 1, "EQUIPO": 4010, "ALIANZA": "AZUL", "POSICIÓN INICIAL": "A"},
+                        {"MATCH": 2, "EQUIPO": 21735, "ALIANZA": "ROJO", "POSICIÓN INICIAL": "E"},
+                    ]),
+                    "Captura_BIOBUZZ_TEST_B": FakeWorksheet("Captura_BIOBUZZ_TEST_B", [
+                        {"MATCH": 1, "EQUIPO": 18562, "ALIANZA": "AZUL", "POSICIÓN INICIAL": "B"},
+                    ]),
+                }
+
+            def worksheets(self):
+                return list(self._sheets.values())
+
+            def worksheet(self, title):
+                return self._sheets[title]
+
+        scouting_a, teams_a, _ = ts.load_event_data(
+            FakeSpreadsheet(), event_code="TEST_A", season=2026, use_ftcscout=False
+        )
+        scouting_b, teams_b, _ = ts.load_event_data(
+            FakeSpreadsheet(), event_code="TEST_B", season=2026, use_ftcscout=False
+        )
+
+        assert sorted(scouting_a["EQUIPO"].tolist()) == [4010, 21735]
+        assert sorted(teams_a["Team ID"].tolist()) == [4010, 21735]
+        assert scouting_b["EQUIPO"].tolist() == [18562]
+        assert teams_b["Team ID"].tolist() == [18562]

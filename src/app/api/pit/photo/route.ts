@@ -8,6 +8,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id')?.trim();
+    const eventCode = searchParams.get('event')?.trim() || undefined;
 
     if (!id) {
       return NextResponse.json(
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const photo = await fetchPitPhotoById(id);
+    const photo = await fetchPitPhotoById(id, eventCode);
     if (!photo) {
       return NextResponse.json(
         { success: false, error: 'Foto no encontrada' },

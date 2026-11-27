@@ -46,6 +46,14 @@ const EVENT_STORAGE_KEY = 'ragnarok_analytics_event_v1';
 const PICK_TAGS_STORAGE_KEY = 'ragnarok_pick_tags_v1';
 const DEFAULT_EVENT_CODE = 'MXTLQ';
 
+function normalizeSearchText(str: string): string {
+  return str
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 export default function RagnarokAnalyticsPage() {
   const [tab, setTab] = useState<ViewTab>('ranking');
   const [loading, setLoading] = useState(true);
@@ -92,10 +100,12 @@ export default function RagnarokAnalyticsPage() {
   const [loadingEvent, setLoadingEvent] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
   const [showEventPicker, setShowEventPicker] = useState(false);
+  const [searchRegion, setSearchRegion] = useState<'MX' | 'ALL'>('MX');
   const [searchingEvents, setSearchingEvents] = useState(false);
   const [eventSearchResults, setEventSearchResults] = useState<
     { code: string; name: string; regionCode?: string; start?: string; hasMatches?: boolean }[]
   >([]);
+  const searchSeqRef = useRef(0);
 
   // Timestone refresh & staleness (>1h) control
   const [timestoneRefreshing, setTimestoneRefreshing] = useState(false);
@@ -128,11 +138,20 @@ export default function RagnarokAnalyticsPage() {
       }
       setPayload(data);
       if (data.teams.length > 0) {
-        setSelectedTeamNum((prev) => (prev && data.teams.some((t) => t.team === prev) ? prev : data.teams[0].team));
-        setAllyCap((prev) => prev || data.teams[0]?.team || 0);
-        setAllyPick1((prev) => prev || data.teams[1]?.team || 0);
-        setOpp1((prev) => prev || data.teams[2]?.team || data.teams[0]?.team || 0);
-        setOpp2((prev) => prev || data.teams[3]?.team || data.teams[1]?.team || 0);
+        const hasTeam = (num: number) => Boolean(num) && data.teams.some((t) => t.team === num);
+        setSelectedTeamNum((prev) => (hasTeam(prev) ? prev : data.teams[0].team));
+        setCompareTeamNum((prev) => (hasTeam(prev) ? prev : 0));
+        setAllyCap((prev) => (hasTeam(prev) ? prev : data.teams[0]?.team || 0));
+        setAllyPick1((prev) => (hasTeam(prev) ? prev : data.teams[1]?.team || data.teams[0]?.team || 0));
+        setOpp1((prev) => (hasTeam(prev) ? prev : data.teams[2]?.team || data.teams[0]?.team || 0));
+        setOpp2((prev) => (hasTeam(prev) ? prev : data.teams[3]?.team || data.teams[1]?.team || data.teams[0]?.team || 0));
+      } else {
+        setSelectedTeamNum(0);
+        setCompareTeamNum(0);
+        setAllyCap(0);
+        setAllyPick1(0);
+        setOpp1(0);
+        setOpp2(0);
       }
       return data;
     } catch (err: any) {
@@ -254,11 +273,15 @@ export default function RagnarokAnalyticsPage() {
   useEffect(() => {
     let initialEvent = DEFAULT_EVENT_CODE;
     let initialSeason = eventSeason;
+    let urlEvent = '';
     try {
+      const rawUrlEvent = new URLSearchParams(window.location.search).get('event') || '';
+      urlEvent = rawUrlEvent.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+
       const savedEvent = localStorage.getItem(EVENT_STORAGE_KEY);
       if (savedEvent) {
         const parsed = JSON.parse(savedEvent);
-        if (parsed.event) {
+        if (parsed.event && (!urlEvent || parsed.event.code === urlEvent)) {
           setLoadedEvent(parsed.event);
           initialEvent = parsed.event.code || DEFAULT_EVENT_CODE;
           loadedEventRef.current = initialEvent;
@@ -268,9 +291,19 @@ export default function RagnarokAnalyticsPage() {
           }
           setEventCodeInput(initialEvent);
         }
-        if (Array.isArray(parsed.teams)) setEventTeams(parsed.teams);
-        if (Array.isArray(parsed.matches)) setScheduleMatches(parsed.matches);
+        if (!urlEvent || parsed.event?.code === urlEvent) {
+          if (Array.isArray(parsed.teams)) setEventTeams(parsed.teams);
+          if (Array.isArray(parsed.matches)) setScheduleMatches(parsed.matches);
+        }
       }
+
+      if (urlEvent) {
+        initialEvent = urlEvent;
+        loadedEventRef.current = urlEvent;
+        setEventCodeInput(urlEvent);
+        setLoadedEvent((prev) => (prev?.code === urlEvent ? prev : { code: urlEvent, name: urlEvent, season: initialSeason }));
+      }
+
       const savedTags = localStorage.getItem(PICK_TAGS_STORAGE_KEY);
       if (savedTags) {
         setPickTags(JSON.parse(savedTags));
@@ -374,22 +407,61 @@ export default function RagnarokAnalyticsPage() {
 
   const handleLoadEvent = () => activateEvent(eventCodeInput);
 
-  const handleSearchEvents = async () => {
-    setSearchingEvents(true);
-    setEventError(null);
-    try {
-      const q = eventCodeInput.trim();
-      const res = await fetch(
-        `/api/event?action=search&season=${eventSeason}&q=${encodeURIComponent(q)}`
-      );
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.error || 'Error buscando eventos');
-      setEventSearchResults(json.events || []);
-    } catch (err: any) {
-      setEventError(err.message);
-    } finally {
-      setSearchingEvents(false);
+  const fetchFTCScoutSearch = useCallback(
+    async (seasonVal: number, regionVal: 'MX' | 'ALL', queryVal: string) => {
+      const seq = ++searchSeqRef.current;
+      setSearchingEvents(true);
+      setEventError(null);
+      try {
+        const params = new URLSearchParams({
+          action: 'search',
+          season: String(seasonVal),
+          region: regionVal,
+        });
+        if (queryVal.trim()) {
+          params.set('q', queryVal.trim());
+        }
+        const res = await fetch(`/api/event?${params.toString()}`);
+        const json = await res.json();
+        if (seq !== searchSeqRef.current) return;
+        if (!res.ok || !json.success) throw new Error(json.error || 'Error buscando eventos');
+        setEventSearchResults(json.events || []);
+      } catch (err: any) {
+        if (seq !== searchSeqRef.current) return;
+        setEventError(err.message);
+      } finally {
+        if (seq === searchSeqRef.current) {
+          setSearchingEvents(false);
+        }
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!showEventPicker) return;
+    if (searchRegion === 'MX') {
+      void fetchFTCScoutSearch(eventSeason, 'MX', '');
     }
+  }, [showEventPicker, eventSeason, searchRegion, fetchFTCScoutSearch]);
+
+  const visibleEventSearchResults = useMemo(() => {
+    if (searchRegion !== 'MX') return eventSearchResults;
+    const qNorm = normalizeSearchText(eventCodeInput);
+    if (!qNorm) return eventSearchResults;
+    const exactOrFiltered = eventSearchResults.filter((ev) => {
+      const haystack = normalizeSearchText(`${ev.code} ${ev.name} ${ev.regionCode || ''}`);
+      return haystack.includes(qNorm);
+    });
+    return exactOrFiltered.length > 0 ? exactOrFiltered : eventSearchResults;
+  }, [searchRegion, eventSearchResults, eventCodeInput]);
+
+  const handleSearchEvents = async () => {
+    await fetchFTCScoutSearch(
+      eventSeason,
+      searchRegion,
+      searchRegion === 'MX' ? '' : eventCodeInput
+    );
   };
 
   const classificationByTeam = useMemo(() => {
@@ -730,9 +802,31 @@ export default function RagnarokAnalyticsPage() {
                 <option value={2026}>2026</option>
                 <option value={2025}>2025</option>
               </select>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSearchRegion('MX')}
+                  className={`btn-ghost ${searchRegion === 'MX' ? 'active' : ''}`}
+                  style={{ padding: '5px 9px', fontSize: '11px' }}
+                >
+                  México (MX)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchRegion('ALL')}
+                  className={`btn-ghost ${searchRegion === 'ALL' ? 'active' : ''}`}
+                  style={{ padding: '5px 9px', fontSize: '11px' }}
+                >
+                  Global
+                </button>
+              </div>
               <input
                 type="text"
-                placeholder="Buscar nombre o código (ej. MXTLQ, Monterrey, MXCMP...)"
+                placeholder={
+                  searchRegion === 'MX'
+                    ? 'Filtrar México (ej. Monterrey, MXTLQ, CDMX...)'
+                    : 'Buscar nombre o código global (ej. CMP, USNM...)'
+                }
                 value={eventCodeInput}
                 onChange={(e) => setEventCodeInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -766,9 +860,9 @@ export default function RagnarokAnalyticsPage() {
               </div>
             )}
 
-            {eventSearchResults.length > 0 && (
+            {visibleEventSearchResults.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '140px', overflowY: 'auto' }}>
-                {eventSearchResults.map((ev) => (
+                {visibleEventSearchResults.map((ev) => (
                   <button
                     key={ev.code}
                     type="button"

@@ -182,7 +182,9 @@ export default function TeamPitCard({ team }: { team: TeamAnalytics }) {
             </div>
             <div className="pit-photo-grid">
               {photos.map((photo, idx) => {
-                const src = `/api/pit/photo?id=${encodeURIComponent(photo.photoId)}`;
+                const src = `/api/pit/photo?id=${encodeURIComponent(photo.photoId)}${
+                  photo.eventCode ? `&event=${encodeURIComponent(photo.eventCode)}` : ''
+                }`;
                 return (
                   <button
                     key={photo.photoId}
@@ -494,7 +496,9 @@ export default function TeamPitCard({ team }: { team: TeamAnalytics }) {
                 </>
               )}
               <a
-                href={`/api/pit/photo?id=${encodeURIComponent(activePhoto.photoId)}`}
+                href={`/api/pit/photo?id=${encodeURIComponent(activePhoto.photoId)}${
+                  activePhoto.eventCode ? `&event=${encodeURIComponent(activePhoto.eventCode)}` : ''
+                }`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-ghost"
@@ -509,7 +513,9 @@ export default function TeamPitCard({ team }: { team: TeamAnalytics }) {
           </div>
 
           <img
-            src={`/api/pit/photo?id=${encodeURIComponent(activePhoto.photoId)}`}
+            src={`/api/pit/photo?id=${encodeURIComponent(activePhoto.photoId)}${
+              activePhoto.eventCode ? `&event=${encodeURIComponent(activePhoto.eventCode)}` : ''
+            }`}
             alt={`#${team.team} ${activePhoto.caption}`}
             onClick={(e) => e.stopPropagation()}
             style={{

@@ -117,6 +117,7 @@ export interface TimestonePayload {
 
 export interface PitPhotoMeta {
   photoId: string;
+  eventCode?: string;
   fileName: string;
   mimeType: string;
   caption: string;
@@ -193,6 +194,8 @@ export interface TeamAnalytics {
 
 export interface AnalyticsPayload {
   success: boolean;
+  eventCode?: string;
+  scoutingSheet?: string;
   updatedAt: string;
   matchesCount: number;
   teamsCount: number;

@@ -836,6 +836,7 @@ def load_event_data(
 
     # ── 1. CARGA DE SCOUTING DESDE SHEETS ──────────────────────────────────────
     scouting_candidates = [
+        f"Captura_BIOBUZZ_{event_code}",
         f"Scouting_{event_code}",
         f"Captura_{event_code}",
         "Captura_BIOBUZZ",
@@ -913,7 +914,11 @@ def load_event_data(
     allow_scouting_roster = (
         not ftc_found
         or ftc_teams_df.empty
-        or scouting_tab in (f"Scouting_{event_code}", f"Captura_{event_code}")
+        or scouting_tab in (
+            f"Captura_BIOBUZZ_{event_code}",
+            f"Scouting_{event_code}",
+            f"Captura_{event_code}",
+        )
         or scouting_has_event_col
     )
     if allow_scouting_roster and not scouting_df.empty and "EQUIPO" in scouting_df.columns:

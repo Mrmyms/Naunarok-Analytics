@@ -333,7 +333,9 @@ function AllianceRobotDetailedCards({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               {thumb && (
                 <img
-                  src={`/api/pit/photo?id=${encodeURIComponent(thumb.photoId)}`}
+                  src={`/api/pit/photo?id=${encodeURIComponent(thumb.photoId)}${
+                    thumb.eventCode ? `&event=${encodeURIComponent(thumb.eventCode)}` : ''
+                  }`}
                   alt={`#${robot.team}`}
                   loading="lazy"
                   style={{
